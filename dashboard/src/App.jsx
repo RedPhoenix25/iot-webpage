@@ -12,7 +12,7 @@ import {
   CalendarDays
 } from 'lucide-react';
 
-const WEBSOCKET_URL = 'ws://192.168.1.100:81'; // Update this to the ESP32 IP address
+const WEBSOCKET_URL = 'ws://192.168.137.240:81'; // Update this to the ESP32 IP address
 
 function App() {
   const [connected, setConnected] = useState(false);
