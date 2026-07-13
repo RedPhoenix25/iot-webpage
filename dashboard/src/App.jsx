@@ -20,11 +20,11 @@ function App() {
   
   // Default State
   const [envData, setEnvData] = useState({
-    temperature: 0,
-    humidity: 0,
-    motion: false,
-    lightLevel: 0,
-    voltage: 0
+    temperature: null,
+    humidity: null,
+    motion: null,
+    lightLevel: null,
+    voltage: null
   });
 
   const [energyData, setEnergyData] = useState({
@@ -141,7 +141,7 @@ function App() {
           </div>
           <div className="env-data">
             <h3>Temperature</h3>
-            <p>{envData.temperature.toFixed(1)}°C</p>
+            <p>{envData.temperature === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.temperature.toFixed(1)}°C`}</p>
           </div>
         </div>
 
@@ -151,7 +151,7 @@ function App() {
           </div>
           <div className="env-data">
             <h3>Humidity</h3>
-            <p>{envData.humidity.toFixed(1)}%</p>
+            <p>{envData.humidity === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.humidity.toFixed(1)}%`}</p>
           </div>
         </div>
 
@@ -161,7 +161,7 @@ function App() {
           </div>
           <div className="env-data">
             <h3>Light Level</h3>
-            <p>{envData.lightLevel}%</p>
+            <p>{envData.lightLevel === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.lightLevel}%`}</p>
           </div>
         </div>
 
@@ -171,7 +171,7 @@ function App() {
           </div>
           <div className="env-data">
             <h3>Motion</h3>
-            <p>{envData.motion ? 'Detected' : 'Clear'}</p>
+            <p>{envData.motion === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : (envData.motion ? 'Detected' : 'Clear')}</p>
           </div>
         </div>
 
@@ -182,7 +182,7 @@ function App() {
           <div className="env-data power-summary">
             <div>
               <h3>Main Voltage</h3>
-              <p>{envData.voltage.toFixed(1)} V</p>
+              <p>{envData.voltage === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.voltage.toFixed(1)} V`}</p>
             </div>
             <div>
               <h3>Total Power Load</h3>

@@ -8,8 +8,8 @@
 #include <Preferences.h>
 
 // --- Configuration ---
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "DESKTOP-JUC9IKT 5571";
+const char* password = "4}Z883z9";
 
 // WebSocket Server on port 81
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -19,6 +19,7 @@ Preferences preferences;
 
 // RTC Module (DS3231)
 RTC_DS3231 rtc;
+bool rtcFound = false;
 
 // --- Pins ---
 // Relays for outlets
@@ -93,12 +94,11 @@ void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
 }
 
 void calculateEnergy(float totalPowerW) {
-  DateTime now = rtc.now();
+  DateTime now = rtcFound ? rtc.now() : DateTime((uint32_t)0);
   
-  // Calculate day of the year and week of the year
-  // Simplistic approach for week: (day of year) / 7
-  // A robust approach would use a proper calendar week calculation
-  int today = now.dayOfTheYear();
+  // Calculate days since epoch for daily rollover
+  // Simplistic approach for week: (days since epoch) / 7
+  int today = now.unixtime() / 86400;
   int thisWeek = today / 7;
 
   // Check for day/week rollovers
@@ -161,8 +161,19 @@ void sendUpdate() {
   
   // Environment
   JsonObject env = doc["env"].to<JsonObject>();
-  env["temperature"] = isnan(t) ? 0 : t;
-  env["humidity"] = isnan(h) ? 0 : h;
+  
+  if (isnan(t)) {
+    env["temperature"] = nullptr;
+  } else {
+    env["temperature"] = t;
+  }
+  
+  if (isnan(h)) {
+    env["humidity"] = nullptr;
+  } else {
+    env["humidity"] = h;
+  }
+  
   env["motion"] = pirState == HIGH;
   env["lightLevel"] = lightLevel;
   env["voltage"] = voltage;
@@ -217,7 +228,7 @@ void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
     return;
   }
   
-  if (doc.containsKey("action") && doc["action"] == "toggle") {
+  if (doc["action"] == "toggle") {
     String id = doc["id"];
     bool newState = doc["state"];
     
@@ -274,7 +285,9 @@ void setup() {
   // Initialize RTC
   if (!rtc.begin()) {
     Serial.println("Couldn't find RTC");
+    rtcFound = false;
   } else {
+    rtcFound = true;
     if (rtc.lostPower()) {
       Serial.println("RTC lost power, let's set the time!");
       rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
