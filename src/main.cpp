@@ -6,10 +6,11 @@
 #include <Wire.h>
 #include <RTClib.h>
 #include <Preferences.h>
+#include <WiFiManager.h>
+#include <ESPmDNS.h>
 
 // --- Configuration ---
-const char* ssid = "DESKTOP-JUC9IKT 5571";
-const char* password = "4}Z883z9";
+// WiFi credentials are now managed dynamically by WiFiManager!
 
 // WebSocket Server on port 81
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -174,9 +175,11 @@ void sendUpdate() {
     env["humidity"] = h;
   }
   
-  env["motion"] = pirState == HIGH;
-  env["lightLevel"] = lightLevel;
-  env["voltage"] = voltage;
+  // Hardcoded to null (Offline) until physical sensors are actually connected.
+  // Analog/Digital pins "float" (pick up random noise) when disconnected, so they must be manually disabled.
+  env["motion"] = nullptr; 
+  env["lightLevel"] = nullptr; 
+  env["voltage"] = nullptr;
   
   // Energy Reports
   JsonObject energy = doc["energy"].to<JsonObject>();
@@ -297,15 +300,30 @@ void setup() {
   // Load Energy from Flash
   loadEnergyData();
   
-  // Connect Wi-Fi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // Connect Wi-Fi using WiFiManager
+  // This will auto-connect to the last saved network.
+  // If it fails or no network is saved, it spins up an AP named "IoT-Hub-AP"
+  WiFiManager wifiManager;
+  
+  // Uncomment the line below to erase saved Wi-Fi credentials
+  // wifiManager.resetSettings();
+
+  bool connected = wifiManager.autoConnect("IoT-Hub-AP");
+  if (!connected) {
+    Serial.println("Failed to connect to WiFi and hit timeout. Rebooting...");
+    ESP.restart();
+    delay(1000);
   }
   
-  Serial.println("\nWiFi connected.");
+  Serial.println("\nWiFi connected successfully!");
   Serial.println(WiFi.localIP());
+  
+  // Start mDNS
+  if (!MDNS.begin("iot-hub")) {
+    Serial.println("Error setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started at iot-hub.local");
+  }
   
   // Start WebSocket
   webSocket.begin();

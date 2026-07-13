@@ -12,9 +12,11 @@ import {
   CalendarDays
 } from 'lucide-react';
 
-const WEBSOCKET_URL = 'ws://192.168.137.240:81'; // Update this to the ESP32 IP address
-
 function App() {
+  const [wsUrl, setWsUrl] = useState(() => localStorage.getItem('wsUrl') || 'ws://iot-hub.local:81');
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempUrl, setTempUrl] = useState(wsUrl);
+
   const [connected, setConnected] = useState(false);
   const [socket, setSocket] = useState(null);
   
@@ -41,7 +43,7 @@ function App() {
 
   useEffect(() => {
     // Initialize WebSocket
-    const ws = new WebSocket(WEBSOCKET_URL);
+    const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
       console.log('Connected to WebSocket');
@@ -74,7 +76,7 @@ function App() {
     return () => {
       ws.close();
     };
-  }, []);
+  }, [wsUrl]);
 
   const toggleOutlet = (id, currentState) => {
     // Optimistic UI update
@@ -100,7 +102,7 @@ function App() {
           <p style={{ color: 'var(--text-muted)' }}>Real-time Monitoring & Management</p>
         </div>
         
-        <div className="connection-status">
+        <div className="connection-status" onClick={() => setShowSettings(!showSettings)} style={{ cursor: 'pointer' }} title="Click to change Network Settings">
           <div className={`status-indicator ${connected ? 'connected' : ''}`}></div>
           {connected ? (
             <><Wifi size={16} /> <span>Connected</span></>
@@ -109,6 +111,34 @@ function App() {
           )}
         </div>
       </header>
+
+      {/* Network Settings Panel */}
+      {showSettings && (
+        <div className="glass-panel" style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.05)' }}>
+          <h3 style={{ marginTop: 0 }}>Network Settings</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+            The dashboard attempts to connect to <strong>ws://iot-hub.local:81</strong> by default. If your network doesn't support mDNS, enter the ESP32's raw IP address here (e.g., ws://192.168.1.100:81).
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input 
+              type="text" 
+              value={tempUrl} 
+              onChange={(e) => setTempUrl(e.target.value)}
+              style={{ flex: 1, padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--text-muted)', background: 'rgba(0,0,0,0.2)', color: 'white' }}
+            />
+            <button 
+              onClick={() => {
+                setWsUrl(tempUrl);
+                localStorage.setItem('wsUrl', tempUrl);
+                setShowSettings(false);
+              }}
+              style={{ padding: '0.5rem 1rem', borderRadius: '4px', background: 'var(--accent-color)', color: 'white', border: 'none', cursor: 'pointer' }}
+            >
+              Save & Reconnect
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Energy Reports Dashboard */}
       <section className="grid-env" style={{ marginBottom: '1.5rem' }}>
