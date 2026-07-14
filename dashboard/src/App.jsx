@@ -27,7 +27,8 @@ function App() {
     humidity: null,
     motion: null,
     lightLevel: null,
-    voltage: null
+    voltage: null,
+    mainCurrent: null
   });
 
   const [energyData, setEnergyData] = useState({
@@ -39,7 +40,7 @@ function App() {
     { id: 'socket1', name: 'Socket 1', state: false, power: 0, current: 0 },
     { id: 'socket2', name: 'Socket 2', state: false, power: 0, current: 0 },
     { id: 'socket3', name: 'Socket 3', state: false, power: 0, current: 0 },
-    { id: 'bulb', name: 'Smart Bulb', state: false, power: 0, current: 0 },
+    { id: 'socket4', name: 'Socket 4', state: false, power: 0, current: 0 },
   ]);
 
   useEffect(() => {
@@ -95,7 +96,10 @@ function App() {
     }
   };
 
-  const totalPower = outlets.reduce((sum, o) => sum + o.power, 0);
+  const outletsTotalPower = outlets.reduce((sum, o) => sum + o.power, 0);
+  const trueTotalPower = (envData.mainCurrent !== null && envData.voltage !== null) 
+    ? envData.mainCurrent * envData.voltage 
+    : outletsTotalPower;
 
   return (
     <div className="dashboard-container">
@@ -191,7 +195,7 @@ function App() {
             </div>
             <div>
               <h3>Total Power Load</h3>
-              <p>{totalPower.toFixed(1)} W</p>
+              <p>{trueTotalPower.toFixed(1)} W</p>
             </div>
           </div>
         </div>

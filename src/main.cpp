@@ -8,6 +8,7 @@
 #include <Preferences.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
+#include <LiquidCrystal_I2C.h>
 
 // --- Configuration ---
 // WiFi credentials are now managed dynamically by WiFiManager!
@@ -28,29 +29,37 @@ RTC_DS3231 rtc;
 bool rtcFound = false;
 
 // --- Pins ---
-// Relays for outlets
+// 4-Channel Relay Module (Digital Outputs)
 const int RELAY_SOCKET_1 = 26;
 const int RELAY_SOCKET_2 = 27;
 const int RELAY_SOCKET_3 = 14;
-const int RELAY_BULB     = 12;
+const int RELAY_SOCKET_4 = 13;
 
 // Environment Sensors
 #define DHTPIN 4
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
-const int PIR_PIN = 5;
-const int LDR_PIN = 32;
+const int PIR_PIN = 5;       // Digital In
+const int LDR_PIN = 15;      // Digital In (DO pin)
 
-// Energy Sensors (Analog Pins)
-const int ACS712_PIN  = 33;
-const int ZMPT101B_PIN = 34;
+// Energy Sensors (Analog ADC1 Pins ONLY!)
+// Note: ADC2 pins fail when Wi-Fi is active. We must use ADC1 (32, 33, 34, 35, 36, 39).
+const int ZMPT101B_PIN = 36; // VP
+const int ACS712_MAIN  = 39; // VN (Main Line Total Current)
+const int ACS712_PIN1  = 34;
+const int ACS712_PIN2  = 35;
+const int ACS712_PIN3  = 32;
+const int ACS712_PIN4  = 33;
+
+// LCD Setup (I2C uses default SDA: 21, SCL: 22)
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // --- State Variables ---
 bool socket1State = false;
 bool socket2State = false;
 bool socket3State = false;
-bool bulbState = false;
+bool socket4State = false;
 
 // Energy Tracking (in Watt-hours)
 double dailyEnergy = 0.0;
@@ -95,7 +104,7 @@ void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
   }
 
   // Placeholder for future rules:
-  // if (lightLevel < 20 && !bulbState) { bulbState = true; digitalWrite(RELAY_BULB, HIGH); }
+  // if (lightLevel < 20 && !socket4State) { socket4State = true; digitalWrite(RELAY_SOCKET_4, HIGH); }
   // if (motion && !socket2State) { socket2State = true; digitalWrite(RELAY_SOCKET_2, HIGH); }
 }
 
@@ -140,7 +149,7 @@ void sendUpdate() {
   float t = dht.readTemperature();
   float h = dht.readHumidity();
   int pirState = digitalRead(PIR_PIN);
-  int ldrValue = analogRead(LDR_PIN);
+  int ldrState = digitalRead(LDR_PIN);
   
   // Mock calculations for sensors
   int zmptRaw = analogRead(ZMPT101B_PIN);
@@ -149,15 +158,30 @@ void sendUpdate() {
   float current1 = socket1State ? 1.2 : 0;
   float current2 = socket2State ? 0.8 : 0;
   float current3 = socket3State ? 2.5 : 0;
-  float currentBulb = bulbState ? 0.1 : 0;
+  float current4 = socket4State ? 0.1 : 0;
   
   float power1 = voltage * current1;
   float power2 = voltage * current2;
   float power3 = voltage * current3;
-  float powerBulb = voltage * currentBulb;
+  float power4 = voltage * current4;
 
-  float totalPower = power1 + power2 + power3 + powerBulb;
-  int lightLevel = map(ldrValue, 0, 4095, 0, 100);
+  float totalPower = power1 + power2 + power3 + power4;
+  int lightLevel = ldrState == HIGH ? 100 : 0;
+
+  // Update LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Pwr: ");
+  lcd.print(totalPower, 1);
+  lcd.print("W ");
+  lcd.print(voltage, 0);
+  lcd.print("V");
+  lcd.setCursor(0, 1);
+  if (WiFi.status() == WL_CONNECTED) {
+    lcd.print(WiFi.localIP().toString());
+  } else {
+    lcd.print("Offline");
+  }
 
   // Apply automations BEFORE sending the update
   checkThresholds(t, h, lightLevel, pirState == HIGH);
@@ -185,6 +209,7 @@ void sendUpdate() {
   env["motion"] = nullptr; 
   env["lightLevel"] = nullptr; 
   env["voltage"] = nullptr;
+  env["mainCurrent"] = nullptr;
   
   // Energy Reports
   JsonObject energy = doc["energy"].to<JsonObject>();
@@ -216,11 +241,11 @@ void sendUpdate() {
   o3["current"] = current3;
 
   JsonObject o4 = outlets.add<JsonObject>();
-  o4["id"] = "bulb";
-  o4["name"] = "Smart Bulb";
-  o4["state"] = bulbState;
-  o4["power"] = powerBulb;
-  o4["current"] = currentBulb;
+  o4["id"] = "socket4";
+  o4["name"] = "Socket 4";
+  o4["state"] = socket4State;
+  o4["power"] = power4;
+  o4["current"] = current4;
 
   String jsonString;
   serializeJson(doc, jsonString);
@@ -253,9 +278,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     } else if (id == "socket3") {
       socket3State = newState;
       digitalWrite(RELAY_SOCKET_3, socket3State ? HIGH : LOW);
-    } else if (id == "bulb") {
-      bulbState = newState;
-      digitalWrite(RELAY_BULB, bulbState ? HIGH : LOW);
+    } else if (id == "socket4") {
+      socket4State = newState;
+      digitalWrite(RELAY_SOCKET_4, socket4State ? HIGH : LOW);
     }
     
     sendUpdate();
@@ -286,15 +311,24 @@ void setup() {
   pinMode(RELAY_SOCKET_1, OUTPUT);
   pinMode(RELAY_SOCKET_2, OUTPUT);
   pinMode(RELAY_SOCKET_3, OUTPUT);
-  pinMode(RELAY_BULB, OUTPUT);
+  pinMode(RELAY_SOCKET_4, OUTPUT);
   
   digitalWrite(RELAY_SOCKET_1, LOW);
   digitalWrite(RELAY_SOCKET_2, LOW);
   digitalWrite(RELAY_SOCKET_3, LOW);
-  digitalWrite(RELAY_BULB, LOW);
+  digitalWrite(RELAY_SOCKET_4, LOW);
   
   pinMode(PIR_PIN, INPUT);
+  pinMode(LDR_PIN, INPUT);
   dht.begin();
+
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("IoT Energy Hub");
+  lcd.setCursor(0, 1);
+  lcd.print("Starting...");
   
   // Initialize RTC
   if (!rtc.begin()) {
@@ -370,9 +404,9 @@ void loop() {
   float current1 = socket1State ? 1.2 : 0;
   float current2 = socket2State ? 0.8 : 0;
   float current3 = socket3State ? 2.5 : 0;
-  float currentBulb = bulbState ? 0.1 : 0;
+  float current4 = socket4State ? 0.1 : 0;
   // Assumed nominal voltage of 220 for quick integration step
-  float totalPowerW = 220.0 * (current1 + current2 + current3 + currentBulb); 
+  float totalPowerW = 220.0 * (current1 + current2 + current3 + current4); 
 
   // Run energy calculation rapidly to accumulate properly
   calculateEnergy(totalPowerW);
