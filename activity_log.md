@@ -47,3 +47,7 @@
 ## True Online Status (LWT)
 - **MQTT Last Will & Testament**: Configured the ESP32 to register a "Last Will" with HiveMQ. If the ESP loses power/WiFi, the broker automatically publishes 'offline' to the status topic.
 - **Dashboard UI Update**: Updated the React dashboard to subscribe to the status topic, accurately reflecting the ESP32's physical state rather than just the browser's connection.
+
+## Security & Authentication
+- **Login Screen**: Added a full-screen, glassmorphism login gateway to the React dashboard.
+- **Environment Variable Protection**: Secured the dashboard with a master password (`VITE_APP_PASSWORD`). Session persistence is intentionally disabled per user request, requiring the password on every fresh load to prevent unauthorized physical access.

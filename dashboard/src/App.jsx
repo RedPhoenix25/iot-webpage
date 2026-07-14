@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import { 
   Thermometer, Droplets, Activity, Sun, Zap, Power,
-  Wifi, WifiOff, BatteryCharging, CalendarDays
+  Wifi, WifiOff, BatteryCharging, CalendarDays, Lock
 } from 'lucide-react';
 
 function App() {
@@ -14,6 +14,10 @@ function App() {
   const [brokerConnected, setBrokerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
   const [socket, setSocket] = useState(null);
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [loginError, setLoginError] = useState(false);
   
   const [envData, setEnvData] = useState({
     temperature: null, humidity: null, motion: null,
@@ -71,10 +75,49 @@ function App() {
     }
   };
 
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (passwordInput === import.meta.env.VITE_APP_PASSWORD) {
+      setIsAuthenticated(true);
+      setLoginError(false);
+    } else {
+      setLoginError(true);
+      setPasswordInput('');
+    }
+  };
+
   const outletsTotalPower = outlets.reduce((sum, o) => sum + o.power, 0);
   const trueTotalPower = (envData.mainCurrent !== null && envData.voltage !== null) 
     ? envData.mainCurrent * envData.voltage 
     : outletsTotalPower;
+
+  if (!isAuthenticated) {
+    return (
+      <div className="login-container">
+        <div className="glass-panel login-card">
+          <div className="login-icon">
+            <Lock size={32} />
+          </div>
+          <div>
+            <h1>Command Center</h1>
+            <p className="subtitle">Enter master password to access</p>
+          </div>
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <input 
+              type="password" 
+              className="login-input" 
+              placeholder="••••••••" 
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              autoFocus
+            />
+            {loginError && <div className="login-error">Incorrect password</div>}
+            <button type="submit" className="login-button">Unlock</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">
