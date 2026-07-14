@@ -25,5 +25,6 @@
 
 ## Dynamic Networking & Captive Portal
 - **WiFiManager**: Replaced hardcoded Wi-Fi credentials in `src/main.cpp` with `tzapu/WiFiManager`. The ESP32 now automatically spins up an Access Point ("IoT-Hub-AP") with a captive portal if it cannot connect to a known network, allowing users to enter new Wi-Fi credentials dynamically.
+  - **Custom Retry Logic**: Programmed the ESP32 to only launch the Captive Portal after explicitly attempting to connect to a known network 5 times, with exactly a 5-second interval between each attempt.
 - **mDNS Support**: Added `ESPmDNS.h` to broadcast the ESP32 as `iot-hub.local`.
 - **Dashboard Network Settings**: Updated `App.jsx` to default to `ws://iot-hub.local:81` and added a clickable connection status that reveals a fallback Settings modal. Users can now manually enter an IP address which is persisted in `localStorage`.

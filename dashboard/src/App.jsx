@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import mqtt from 'mqtt';
 import { 
   Thermometer, 
   Droplets, 
@@ -13,9 +14,9 @@ import {
 } from 'lucide-react';
 
 function App() {
-  const [wsUrl, setWsUrl] = useState(() => localStorage.getItem('wsUrl') || 'ws://iot-hub.local:81');
-  const [showSettings, setShowSettings] = useState(false);
-  const [tempUrl, setTempUrl] = useState(wsUrl);
+  const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+  const MQTT_TOPIC_DATA = 'iot-hub/redphoenix25-v1-x8f9a2/data';
+  const MQTT_TOPIC_CMD = 'iot-hub/redphoenix25-v1-x8f9a2/cmd';
 
   const [connected, setConnected] = useState(false);
   const [socket, setSocket] = useState(null);
@@ -42,49 +43,51 @@ function App() {
   ]);
 
   useEffect(() => {
-    // Initialize WebSocket
-    const ws = new WebSocket(wsUrl);
+    // Connect to MQTT Broker
+    const client = mqtt.connect(MQTT_BROKER);
     
-    ws.onopen = () => {
-      console.log('Connected to WebSocket');
+    client.on('connect', () => {
+      console.log('Connected to MQTT Broker');
       setConnected(true);
-    };
-    
-    ws.onclose = () => {
-      console.log('Disconnected from WebSocket');
-      setConnected(false);
-      // Attempt reconnect logic can be added here
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket Error: ', error);
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.env) setEnvData(data.env);
-        if (data.energy) setEnergyData(data.energy);
-        if (data.outlets) setOutlets(data.outlets);
-      } catch (err) {
-        console.error('Error parsing JSON:', err);
+      client.subscribe(MQTT_TOPIC_DATA);
+    });
+
+    client.on('message', (topic, message) => {
+      if (topic === MQTT_TOPIC_DATA) {
+        try {
+          const data = JSON.parse(message.toString());
+          if (data.env) setEnvData(data.env);
+          if (data.energy) setEnergyData(data.energy);
+          if (data.outlets) setOutlets(data.outlets);
+        } catch (err) {
+          console.error('Error parsing JSON:', err);
+        }
       }
-    };
+    });
+
+    client.on('close', () => {
+      console.log('Disconnected from MQTT');
+      setConnected(false);
+    });
     
-    setSocket(ws);
+    client.on('error', (err) => {
+      console.error('MQTT Error: ', err);
+    });
+    
+    setSocket(client);
     
     return () => {
-      ws.close();
+      client.end();
     };
-  }, [wsUrl]);
+  }, []);
 
   const toggleOutlet = (id, currentState) => {
     // Optimistic UI update
     setOutlets(outlets.map(o => o.id === id ? { ...o, state: !currentState } : o));
     
-    // Send to ESP32
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
+    // Send to ESP32 via MQTT
+    if (socket && connected) {
+      socket.publish(MQTT_TOPIC_CMD, JSON.stringify({
         action: 'toggle',
         id: id,
         state: !currentState
@@ -102,7 +105,7 @@ function App() {
           <p style={{ color: 'var(--text-muted)' }}>Real-time Monitoring & Management</p>
         </div>
         
-        <div className="connection-status" onClick={() => setShowSettings(!showSettings)} style={{ cursor: 'pointer' }} title="Click to change Network Settings">
+        <div className="connection-status">
           <div className={`status-indicator ${connected ? 'connected' : ''}`}></div>
           {connected ? (
             <><Wifi size={16} /> <span>Connected</span></>
@@ -111,34 +114,6 @@ function App() {
           )}
         </div>
       </header>
-
-      {/* Network Settings Panel */}
-      {showSettings && (
-        <div className="glass-panel" style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.05)' }}>
-          <h3 style={{ marginTop: 0 }}>Network Settings</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            The dashboard attempts to connect to <strong>ws://iot-hub.local:81</strong> by default. If your network doesn't support mDNS, enter the ESP32's raw IP address here (e.g., ws://192.168.1.100:81).
-          </p>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <input 
-              type="text" 
-              value={tempUrl} 
-              onChange={(e) => setTempUrl(e.target.value)}
-              style={{ flex: 1, padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--text-muted)', background: 'rgba(0,0,0,0.2)', color: 'white' }}
-            />
-            <button 
-              onClick={() => {
-                setWsUrl(tempUrl);
-                localStorage.setItem('wsUrl', tempUrl);
-                setShowSettings(false);
-              }}
-              style={{ padding: '0.5rem 1rem', borderRadius: '4px', background: 'var(--accent-color)', color: 'white', border: 'none', cursor: 'pointer' }}
-            >
-              Save & Reconnect
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Energy Reports Dashboard */}
       <section className="grid-env" style={{ marginBottom: '1.5rem' }}>

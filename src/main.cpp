@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WebSocketsServer.h>
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <Wire.h>
@@ -12,8 +12,13 @@
 // --- Configuration ---
 // WiFi credentials are now managed dynamically by WiFiManager!
 
-// WebSocket Server on port 81
-WebSocketsServer webSocket = WebSocketsServer(81);
+const char* mqtt_server = "broker.hivemq.com";
+const int mqtt_port = 1883;
+const char* mqtt_topic_data = "iot-hub/redphoenix25-v1-x8f9a2/data";
+const char* mqtt_topic_cmd  = "iot-hub/redphoenix25-v1-x8f9a2/cmd";
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
 
 // Preferences for data persistence
 Preferences preferences;
@@ -220,12 +225,16 @@ void sendUpdate() {
   String jsonString;
   serializeJson(doc, jsonString);
   
-  webSocket.broadcastTXT(jsonString);
+  if (mqttClient.connected()) {
+    mqttClient.publish(mqtt_topic_data, jsonString.c_str());
+  }
 }
 
-void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (strcmp(topic, mqtt_topic_cmd) != 0) return;
+
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
     Serial.println("deserializeJson() failed");
     return;
@@ -253,18 +262,20 @@ void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
   }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-  switch (type) {
-    case WStype_DISCONNECTED:
-      break;
-    case WStype_CONNECTED:
-      sendUpdate();
-      break;
-    case WStype_TEXT:
-      handleWebSocketMessage(num, payload, length);
-      break;
-    default:
-      break;
+void reconnectMQTT() {
+  while (!mqttClient.connected() && WiFi.status() == WL_CONNECTED) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP32Client-";
+    clientId += String(random(0xffff), HEX);
+    if (mqttClient.connect(clientId.c_str())) {
+      Serial.println("connected to MQTT broker!");
+      mqttClient.subscribe(mqtt_topic_cmd);
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
   }
 }
 
@@ -300,19 +311,34 @@ void setup() {
   // Load Energy from Flash
   loadEnergyData();
   
-  // Connect Wi-Fi using WiFiManager
-  // This will auto-connect to the last saved network.
-  // If it fails or no network is saved, it spins up an AP named "IoT-Hub-AP"
-  WiFiManager wifiManager;
-  
-  // Uncomment the line below to erase saved Wi-Fi credentials
-  // wifiManager.resetSettings();
+  // Connect Wi-Fi with custom retry logic
+  WiFi.mode(WIFI_STA);
+  if (WiFi.SSID() != "") {
+    Serial.print("Attempting to connect to known network: ");
+    Serial.println(WiFi.SSID());
+    WiFi.begin();
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 5) {
+      delay(5000); // 5 second interval
+      Serial.print(".");
+      attempts++;
+    }
+  }
 
-  bool connected = wifiManager.autoConnect("IoT-Hub-AP");
-  if (!connected) {
-    Serial.println("Failed to connect to WiFi and hit timeout. Rebooting...");
-    ESP.restart();
-    delay(1000);
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nCould not connect to known network after 5 attempts. Starting Access Point...");
+    WiFiManager wifiManager;
+    
+    // Uncomment the line below to erase saved Wi-Fi credentials
+    // wifiManager.resetSettings();
+    
+    // Force the Captive Portal to open since connection failed
+    if (!wifiManager.startConfigPortal("IoT-Hub-AP")) {
+      Serial.println("Failed to connect and hit timeout. Rebooting...");
+      ESP.restart();
+      delay(1000);
+    }
   }
   
   Serial.println("\nWiFi connected successfully!");
@@ -325,15 +351,20 @@ void setup() {
     Serial.println("mDNS responder started at iot-hub.local");
   }
   
-  // Start WebSocket
-  webSocket.begin();
-  webSocket.onEvent(webSocketEvent);
+  // Setup MQTT
+  mqttClient.setServer(mqtt_server, mqtt_port);
+  mqttClient.setCallback(mqttCallback);
 
   lastEnergyCalc = millis();
 }
 
 void loop() {
-  webSocket.loop();
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!mqttClient.connected()) {
+      reconnectMQTT();
+    }
+    mqttClient.loop();
+  }
   
   // Calculate total power dynamically for energy calculation
   float current1 = socket1State ? 1.2 : 0;
