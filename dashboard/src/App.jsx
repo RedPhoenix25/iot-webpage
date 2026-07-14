@@ -143,9 +143,6 @@ function App() {
         max={5000} 
       />
 
-      {/* Historical Graph (Includes Lookup) */}
-      <HistoricalGraph />
-
       {/* Environment 2x2 Grid */}
       <div className="grid-2col">
         <div className="glass-panel env-card">
@@ -214,6 +211,8 @@ function App() {
         </div>
       </div>
 
+      {/* Historical Graph (Includes Lookup) */}
+      <HistoricalGraph />
     </div>
   );
 }
