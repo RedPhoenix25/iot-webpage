@@ -5,6 +5,10 @@ import {
   Wifi, WifiOff, BatteryCharging, CalendarDays, Lock
 } from 'lucide-react';
 
+import AnalogGauge from './components/AnalogGauge';
+import HistoricalGraph from './components/HistoricalGraph';
+import HistoryLookup from './components/HistoryLookup';
+
 function App() {
   const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
   const MQTT_TOPIC_DATA = 'iot-hub/redphoenix25-v1-x8f9a2/data';
@@ -24,15 +28,11 @@ function App() {
     lightLevel: null, voltage: null, mainCurrent: null
   });
 
-  const [energyData, setEnergyData] = useState({
-    dailyWh: 0, weeklyWh: 0
-  });
-
   const [outlets, setOutlets] = useState([
-    { id: 'socket1', name: 'CH 1', state: false, power: 0, current: 0 },
-    { id: 'socket2', name: 'CH 2', state: false, power: 0, current: 0 },
-    { id: 'socket3', name: 'CH 3', state: false, power: 0, current: 0 },
-    { id: 'socket4', name: 'CH 4', state: false, power: 0, current: 0 },
+    { id: 'socket1', name: 'Socket 1', state: false, power: 0, current: 0 },
+    { id: 'socket2', name: 'Socket 2', state: false, power: 0, current: 0 },
+    { id: 'socket3', name: 'Socket 3', state: false, power: 0, current: 0 },
+    { id: 'socket4', name: 'Socket 4', state: false, power: 0, current: 0 }
   ]);
 
   useEffect(() => {
@@ -51,7 +51,6 @@ function App() {
         try {
           const data = JSON.parse(message.toString());
           if (data.env) setEnvData(data.env);
-          if (data.energy) setEnergyData(data.energy);
           if (data.outlets) setOutlets(data.outlets);
         } catch (err) {}
       }
@@ -137,38 +136,37 @@ function App() {
         </div>
       </header>
 
-      {/* Hero Summary Card */}
-      <div className="glass-panel hero-card">
-        <div>
-          <div className="hero-label">Total Power Load</div>
-          <div className="hero-value">{trueTotalPower.toFixed(1)} <span style={{fontSize:'1.5rem'}}>W</span></div>
-        </div>
-        <div className="hero-right">
-          <div className="hero-label">Main Voltage</div>
-          <div className="number-font hero-voltage">
-            {envData.voltage === null ? '--' : envData.voltage.toFixed(1)} V
+        <div className="grid-hero">
+          <div className="glass-panel hero-card">
+            <div>
+              <p className="hero-label">Total Power Load</p>
+              <div className="hero-value-container">
+                <span className="hero-value">{trueTotalPower.toFixed(1)}</span>
+                <span className="hero-unit">W</span>
+              </div>
+            </div>
+            <div className="hero-secondary">
+              <p className="hero-label">Main Voltage</p>
+              <div className="hero-value-container" style={{justifyContent: 'flex-end'}}>
+                <span className="hero-value" style={{color: 'var(--success-color)'}}>
+                  {envData.voltage !== null ? envData.voltage.toFixed(0) : '--'}
+                </span>
+                <span className="hero-unit">V</span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Energy Grid */}
-      <div className="grid-2col">
-        <div className="glass-panel env-card" style={{ borderColor: 'rgba(16, 185, 129, 0.2)' }}>
-          <div className="env-header">
-            <div className="env-icon-wrapper" style={{ color: 'var(--success-color)' }}><BatteryCharging size={20} /></div>
-            Today's Usage
-          </div>
-          <div className="env-value">{(energyData.dailyWh / 1000).toFixed(2)} <span style={{fontSize:'1rem', color:'var(--text-muted)'}}>kWh</span></div>
+        {/* Live Wattage Gauge */}
+        <div className="grid-overview">
+          <AnalogGauge value={trueTotalPower} max={5000} />
         </div>
+
+        {/* Historical Graph */}
+        <HistoricalGraph />
         
-        <div className="glass-panel env-card" style={{ borderColor: 'rgba(138, 43, 226, 0.2)' }}>
-          <div className="env-header">
-            <div className="env-icon-wrapper" style={{ color: '#c084fc' }}><CalendarDays size={20} /></div>
-            Weekly Usage
-          </div>
-          <div className="env-value">{(energyData.weeklyWh / 1000).toFixed(2)} <span style={{fontSize:'1rem', color:'var(--text-muted)'}}>kWh</span></div>
-        </div>
-      </div>
+        {/* Historical Lookup */}
+        <HistoryLookup />
 
       {/* Environment 2x2 Grid */}
       <div className="grid-2col">

@@ -9,6 +9,7 @@
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
 #include <LiquidCrystal_I2C.h>
+#include <HTTPClient.h>
 
 // --- Configuration ---
 // WiFi credentials are now managed dynamically by WiFiManager!
@@ -18,11 +19,10 @@ const int mqtt_port = 1883;
 const char* mqtt_topic_data = "iot-hub/redphoenix25-v1-x8f9a2/data";
 const char* mqtt_topic_cmd  = "iot-hub/redphoenix25-v1-x8f9a2/cmd";
 
+const char* firebase_url = "https://iot-energy-hub-eea5f-default-rtdb.firebaseio.com";
+
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
-
-// Preferences for data persistence
-Preferences preferences;
 
 // RTC Module (DS3231)
 RTC_DS3231 rtc;
@@ -61,38 +61,13 @@ bool socket2State = false;
 bool socket3State = false;
 bool socket4State = false;
 
-// Energy Tracking (in Watt-hours)
-double dailyEnergy = 0.0;
-double weeklyEnergy = 0.0;
-
-int currentDay = -1;
-int currentWeek = -1;
+// Energy Tracking
+double hourlyEnergy = 0.0;
+int currentHour = -1;
 
 unsigned long lastEnergyCalc = 0;
 unsigned long lastUpdate = 0;
-unsigned long lastSaveTime = 0;
-
-void saveEnergyData() {
-  preferences.begin("energy", false);
-  preferences.putDouble("dailyEnergy", dailyEnergy);
-  preferences.putDouble("weeklyEnergy", weeklyEnergy);
-  preferences.putInt("savedDay", currentDay);
-  preferences.putInt("savedWeek", currentWeek);
-  preferences.end();
-  Serial.println("Energy data saved to Flash.");
-}
-
-void loadEnergyData() {
-  preferences.begin("energy", true);
-  dailyEnergy = preferences.getDouble("dailyEnergy", 0.0);
-  weeklyEnergy = preferences.getDouble("weeklyEnergy", 0.0);
-  int savedDay = preferences.getInt("savedDay", -1);
-  int savedWeek = preferences.getInt("savedWeek", -1);
-  preferences.end();
-
-  // If the loaded day or week doesn't match the current RTC day/week, we might need to reset.
-  // This is handled in the calculateEnergy() loop.
-}
+unsigned long lastFirebaseLog = 0;
 
 // Simple rule engine for automated thresholds
 void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
@@ -110,38 +85,50 @@ void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
 
 void calculateEnergy(float totalPowerW) {
   DateTime now = rtcFound ? rtc.now() : DateTime((uint32_t)0);
-  
-  // Calculate days since epoch for daily rollover
-  // Simplistic approach for week: (days since epoch) / 7
-  int today = now.unixtime() / 86400;
-  int thisWeek = today / 7;
+  int thisHour = now.hour();
 
-  // Check for day/week rollovers
-  if (currentDay == -1) {
-    // Initial boot load
-    currentDay = today;
-    currentWeek = thisWeek;
+  if (currentHour == -1) {
+    currentHour = thisHour;
   }
 
-  if (today != currentDay) {
-    dailyEnergy = 0.0; // Reset daily
-    currentDay = today;
+  if (thisHour != currentHour) {
+    hourlyEnergy = 0.0; // Reset hourly accumulator
+    currentHour = thisHour;
   }
 
-  if (thisWeek != currentWeek) {
-    weeklyEnergy = 0.0; // Reset weekly
-    currentWeek = thisWeek;
-  }
-
-  // Calculate elapsed time since last energy calculation in seconds
   unsigned long currentTime = millis();
-  float elapsedHours = (currentTime - lastEnergyCalc) / 3600000.0; // convert ms to hours
+  float elapsedHours = (currentTime - lastEnergyCalc) / 3600000.0; 
   lastEnergyCalc = currentTime;
 
-  // Energy (Wh) = Power (W) * Time (hours)
-  double energyToAdd = totalPowerW * elapsedHours;
-  dailyEnergy += energyToAdd;
-  weeklyEnergy += energyToAdd;
+  hourlyEnergy += (totalPowerW * elapsedHours);
+}
+
+void logEnergyToFirebase() {
+  if (WiFi.status() != WL_CONNECTED || !rtcFound) return;
+
+  DateTime now = rtc.now();
+  int year = now.year();
+  int month = now.month();
+  int day = now.day();
+  int hour = now.hour();
+
+  String url = String(firebase_url) + "/energy_logs/" + String(year) + "/" + String(month) + "/" + String(day) + "/" + String(hour) + ".json";
+  
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  
+  String payload = "{\"wh\":" + String(hourlyEnergy, 4) + "}";
+  int httpResponseCode = http.PATCH(payload);
+  
+  if (httpResponseCode > 0) {
+    Serial.print("Firebase Logged: ");
+    Serial.println(payload);
+  } else {
+    Serial.print("Firebase Error: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
 }
 
 void sendUpdate() {
@@ -211,10 +198,8 @@ void sendUpdate() {
   env["voltage"] = nullptr;
   env["mainCurrent"] = nullptr;
   
-  // Energy Reports
-  JsonObject energy = doc["energy"].to<JsonObject>();
-  energy["dailyWh"] = dailyEnergy;
-  energy["weeklyWh"] = weeklyEnergy;
+  env["voltage"] = nullptr;
+  env["mainCurrent"] = nullptr;
 
   // Outlets
   JsonArray outlets = doc["outlets"].to<JsonArray>();
@@ -342,9 +327,6 @@ void setup() {
       rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     }
   }
-
-  // Load Energy from Flash
-  loadEnergyData();
   
   // Connect Wi-Fi with custom retry logic
   WiFi.mode(WIFI_STA);
@@ -419,9 +401,9 @@ void loop() {
     sendUpdate();
   }
 
-  // Save to flash every 10 minutes (600000 ms) to avoid flash wear
-  if (nowMs - lastSaveTime > 600000) {
-    lastSaveTime = nowMs;
-    saveEnergyData();
+  // Log to Firebase every 1 minute
+  if (nowMs - lastFirebaseLog > 60000) {
+    lastFirebaseLog = nowMs;
+    logEnergyToFirebase();
   }
 }

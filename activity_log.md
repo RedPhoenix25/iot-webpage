@@ -51,3 +51,9 @@
 ## Security & Authentication
 - **Login Screen**: Added a full-screen, glassmorphism login gateway to the React dashboard.
 - **Environment Variable Protection**: Secured the dashboard with a master password (`VITE_APP_PASSWORD`). Session persistence is intentionally disabled per user request, requiring the password on every fresh load to prevent unauthorized physical access.
+
+## Historical Data & Cloud Database
+- **Firebase Migration**: Replaced the ESP32's internal flash memory logging with a direct HTTP connection to Firebase Realtime Database. The ESP32 now patches an accumulated "Watt-hour" tally for the current hour directly to the cloud every 60 seconds.
+- **Analog Meter**: Removed the static Daily/Weekly text cards in favor of a sleek SVG `AnalogGauge` component to display live wattage instantly.
+- **Multi-View Interactive Graph**: Integrated `recharts` to build a `HistoricalGraph` component. It dynamically queries the Firebase JSON tree and plots Hourly, Daily, Weekly, and Monthly aggregations.
+- **Historical Lookup Module**: Built a targeted querying tool allowing users to select a specific Date and Hour from a calendar to check exact power usage in the past.
