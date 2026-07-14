@@ -92,9 +92,9 @@ function App() {
           <div className="hero-label">Total Power Load</div>
           <div className="hero-value">{trueTotalPower.toFixed(1)} <span style={{fontSize:'1.5rem'}}>W</span></div>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="hero-right">
           <div className="hero-label">Main Voltage</div>
-          <div className="number-font" style={{ fontSize: '1.5rem', color: 'var(--text-main)' }}>
+          <div className="number-font hero-voltage">
             {envData.voltage === null ? '--' : envData.voltage.toFixed(1)} V
           </div>
         </div>

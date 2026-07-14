@@ -150,6 +150,15 @@ h2 {
   margin-bottom: 4px;
 }
 
+.hero-right {
+  text-align: right;
+}
+
+.hero-voltage {
+  font-size: 1.5rem;
+  color: var(--text-main);
+}
+
 /* Grids */
 .grid-2col {
   display: grid;
@@ -167,14 +176,14 @@ h2 {
 .env-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
 }
 
 .env-icon-wrapper {
-  padding: 8px;
+  padding: 6px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   display: flex;
@@ -183,7 +192,7 @@ h2 {
 }
 
 .env-value {
-  font-size: 1.8rem;
+  font-size: 1.5rem;
   font-weight: 700;
   font-family: 'Outfit', sans-serif;
 }
@@ -312,30 +321,40 @@ input:checked + .slider:before {
 /* Tablet & Mobile Responsiveness */
 @media (max-width: 768px) {
   .dashboard-container {
-    padding: 1.5rem 1rem;
+    padding: 1.2rem 1rem;
     gap: 1.25rem;
   }
   
   .header {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
     gap: 12px;
     margin-bottom: 0.5rem;
   }
 
-  h1 { font-size: 1.8rem; }
+  h1 { font-size: 1.4rem; }
+  .subtitle { font-size: 0.85rem; }
   
   .hero-card {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
     gap: 1rem;
+    padding: 16px;
   }
   
-  .hero-value { font-size: 2.5rem; }
+  .hero-value { font-size: 2rem; }
+  .hero-value span { font-size: 1.2rem !important; }
+  .hero-voltage { font-size: 1.25rem; }
+  .hero-label { font-size: 0.85rem; }
+  
+  .env-card {
+    padding: 14px;
+    gap: 8px;
+  }
   
   /* Make device cards fully vertical on extremely small screens (< 350px), otherwise keep flex */
   .device-card {
-    padding: 14px 16px;
+    padding: 12px 14px;
   }
   
   .device-name { font-size: 1rem; }
