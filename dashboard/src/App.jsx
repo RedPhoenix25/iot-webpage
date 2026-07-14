@@ -1,16 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import { 
-  Thermometer, 
-  Droplets, 
-  Activity, 
-  Sun, 
-  Zap, 
-  Power,
-  Wifi,
-  WifiOff,
-  BatteryCharging,
-  CalendarDays
+  Thermometer, Droplets, Activity, Sun, Zap, Power,
+  Wifi, WifiOff, BatteryCharging, CalendarDays
 } from 'lucide-react';
 
 function App() {
@@ -21,34 +13,26 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [socket, setSocket] = useState(null);
   
-  // Default State
   const [envData, setEnvData] = useState({
-    temperature: null,
-    humidity: null,
-    motion: null,
-    lightLevel: null,
-    voltage: null,
-    mainCurrent: null
+    temperature: null, humidity: null, motion: null,
+    lightLevel: null, voltage: null, mainCurrent: null
   });
 
   const [energyData, setEnergyData] = useState({
-    dailyWh: 0,
-    weeklyWh: 0
+    dailyWh: 0, weeklyWh: 0
   });
 
   const [outlets, setOutlets] = useState([
-    { id: 'socket1', name: 'Socket 1', state: false, power: 0, current: 0 },
-    { id: 'socket2', name: 'Socket 2', state: false, power: 0, current: 0 },
-    { id: 'socket3', name: 'Socket 3', state: false, power: 0, current: 0 },
-    { id: 'socket4', name: 'Socket 4', state: false, power: 0, current: 0 },
+    { id: 'socket1', name: 'CH 1', state: false, power: 0, current: 0 },
+    { id: 'socket2', name: 'CH 2', state: false, power: 0, current: 0 },
+    { id: 'socket3', name: 'CH 3', state: false, power: 0, current: 0 },
+    { id: 'socket4', name: 'CH 4', state: false, power: 0, current: 0 },
   ]);
 
   useEffect(() => {
-    // Connect to MQTT Broker
     const client = mqtt.connect(MQTT_BROKER);
     
     client.on('connect', () => {
-      console.log('Connected to MQTT Broker');
       setConnected(true);
       client.subscribe(MQTT_TOPIC_DATA);
     });
@@ -60,38 +44,21 @@ function App() {
           if (data.env) setEnvData(data.env);
           if (data.energy) setEnergyData(data.energy);
           if (data.outlets) setOutlets(data.outlets);
-        } catch (err) {
-          console.error('Error parsing JSON:', err);
-        }
+        } catch (err) {}
       }
     });
 
-    client.on('close', () => {
-      console.log('Disconnected from MQTT');
-      setConnected(false);
-    });
-    
-    client.on('error', (err) => {
-      console.error('MQTT Error: ', err);
-    });
+    client.on('close', () => setConnected(false));
     
     setSocket(client);
-    
-    return () => {
-      client.end();
-    };
+    return () => client.end();
   }, []);
 
   const toggleOutlet = (id, currentState) => {
-    // Optimistic UI update
     setOutlets(outlets.map(o => o.id === id ? { ...o, state: !currentState } : o));
-    
-    // Send to ESP32 via MQTT
     if (socket && connected) {
       socket.publish(MQTT_TOPIC_CMD, JSON.stringify({
-        action: 'toggle',
-        id: id,
-        state: !currentState
+        action: 'toggle', id: id, state: !currentState
       }));
     }
   };
@@ -103,115 +70,109 @@ function App() {
 
   return (
     <div className="dashboard-container">
+      {/* Header */}
       <header className="header">
         <div>
-          <h1>IoT Energy Hub</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Real-time Monitoring & Management</p>
+          <h1>Command Center</h1>
+          <p className="subtitle">Live Hub Overview</p>
         </div>
-        
         <div className="connection-status">
           <div className={`status-indicator ${connected ? 'connected' : ''}`}></div>
           {connected ? (
-            <><Wifi size={16} /> <span>Connected</span></>
+            <span className="connected-text">Connected</span>
           ) : (
-            <><WifiOff size={16} /> <span>Offline</span></>
+            <span>Offline</span>
           )}
         </div>
       </header>
 
-      {/* Energy Reports Dashboard */}
-      <section className="grid-env" style={{ marginBottom: '1.5rem' }}>
-        <div className="glass-panel env-card" style={{ background: 'rgba(0, 230, 118, 0.05)', borderColor: 'rgba(0, 230, 118, 0.2)' }}>
-          <div className="env-icon" style={{ color: 'var(--success-color)' }}>
-            <BatteryCharging size={24} />
-          </div>
-          <div className="env-data">
-            <h3>Daily Energy Consumed</h3>
-            <p>{(energyData.dailyWh / 1000).toFixed(2)} kWh</p>
+      {/* Hero Summary Card */}
+      <div className="glass-panel hero-card">
+        <div>
+          <div className="hero-label">Total Power Load</div>
+          <div className="hero-value">{trueTotalPower.toFixed(1)} <span style={{fontSize:'1.5rem'}}>W</span></div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="hero-label">Main Voltage</div>
+          <div className="number-font" style={{ fontSize: '1.5rem', color: 'var(--text-main)' }}>
+            {envData.voltage === null ? '--' : envData.voltage.toFixed(1)} V
           </div>
         </div>
+      </div>
 
-        <div className="glass-panel env-card" style={{ background: 'rgba(138, 43, 226, 0.05)', borderColor: 'rgba(138, 43, 226, 0.2)' }}>
-          <div className="env-icon" style={{ color: '#8a2be2' }}>
-            <CalendarDays size={24} />
+      {/* Energy Grid */}
+      <div className="grid-2col">
+        <div className="glass-panel env-card" style={{ borderColor: 'rgba(16, 185, 129, 0.2)' }}>
+          <div className="env-header">
+            <div className="env-icon-wrapper" style={{ color: 'var(--success-color)' }}><BatteryCharging size={20} /></div>
+            Today's Usage
           </div>
-          <div className="env-data">
-            <h3>Weekly Energy Consumed</h3>
-            <p>{(energyData.weeklyWh / 1000).toFixed(2)} kWh</p>
-          </div>
+          <div className="env-value">{(energyData.dailyWh / 1000).toFixed(2)} <span style={{fontSize:'1rem', color:'var(--text-muted)'}}>kWh</span></div>
         </div>
-      </section>
+        
+        <div className="glass-panel env-card" style={{ borderColor: 'rgba(138, 43, 226, 0.2)' }}>
+          <div className="env-header">
+            <div className="env-icon-wrapper" style={{ color: '#c084fc' }}><CalendarDays size={20} /></div>
+            Weekly Usage
+          </div>
+          <div className="env-value">{(energyData.weeklyWh / 1000).toFixed(2)} <span style={{fontSize:'1rem', color:'var(--text-muted)'}}>kWh</span></div>
+        </div>
+      </div>
 
-      {/* Environmental Dashboard */}
-      <section className="grid-env">
+      {/* Environment 2x2 Grid */}
+      <div className="grid-2col">
         <div className="glass-panel env-card">
-          <div className="env-icon" style={{ color: '#ff6b6b' }}>
-            <Thermometer size={24} />
+          <div className="env-header">
+            <div className="env-icon-wrapper" style={{ color: '#ef4444' }}><Thermometer size={20} /></div>
+            Temperature
           </div>
-          <div className="env-data">
-            <h3>Temperature</h3>
-            <p>{envData.temperature === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.temperature.toFixed(1)}°C`}</p>
-          </div>
-        </div>
-
-        <div className="glass-panel env-card">
-          <div className="env-icon" style={{ color: '#4dabf7' }}>
-            <Droplets size={24} />
-          </div>
-          <div className="env-data">
-            <h3>Humidity</h3>
-            <p>{envData.humidity === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.humidity.toFixed(1)}%`}</p>
-          </div>
+          <div className="env-value">{envData.temperature === null ? '--' : `${envData.temperature.toFixed(1)}°`}</div>
         </div>
 
         <div className="glass-panel env-card">
-          <div className="env-icon" style={{ color: '#fcc419' }}>
-            <Sun size={24} />
+          <div className="env-header">
+            <div className="env-icon-wrapper" style={{ color: '#3b82f6' }}><Droplets size={20} /></div>
+            Humidity
           </div>
-          <div className="env-data">
-            <h3>Light Level</h3>
-            <p>{envData.lightLevel === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.lightLevel}%`}</p>
-          </div>
+          <div className="env-value">{envData.humidity === null ? '--' : `${envData.humidity.toFixed(1)}%`}</div>
         </div>
 
         <div className="glass-panel env-card">
-          <div className="env-icon" style={{ color: envData.motion ? '#51cf66' : '#868e96' }}>
-            <Activity size={24} />
+          <div className="env-header">
+            <div className="env-icon-wrapper" style={{ color: '#eab308' }}><Sun size={20} /></div>
+            Light Level
           </div>
-          <div className="env-data">
-            <h3>Motion</h3>
-            <p>{envData.motion === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : (envData.motion ? 'Detected' : 'Clear')}</p>
-          </div>
+          <div className="env-value">{envData.lightLevel === null ? '--' : `${envData.lightLevel}%`}</div>
         </div>
 
-        <div className="glass-panel env-card" style={{ gridColumn: '1 / -1', background: 'rgba(0, 229, 255, 0.05)', borderColor: 'rgba(0, 229, 255, 0.2)' }}>
-          <div className="env-icon" style={{ color: 'var(--accent-color)' }}>
-            <Zap size={24} />
+        <div className="glass-panel env-card">
+          <div className="env-header">
+            <div className="env-icon-wrapper" style={{ color: envData.motion ? 'var(--success-color)' : 'var(--text-muted)' }}><Activity size={20} /></div>
+            Motion
           </div>
-          <div className="env-data power-summary">
-            <div>
-              <h3>Main Voltage</h3>
-              <p>{envData.voltage === null ? <span style={{ color: 'var(--text-muted)' }}>Offline</span> : `${envData.voltage.toFixed(1)} V`}</p>
-            </div>
-            <div>
-              <h3>Total Power Load</h3>
-              <p>{trueTotalPower.toFixed(1)} W</p>
-            </div>
+          <div className="env-value" style={{ fontSize: '1.4rem' }}>
+            {envData.motion === null ? '--' : (envData.motion ? 'Detected' : 'Clear')}
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Outlet Control */}
-      <h2>Power Outlets</h2>
-      <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Control your sockets and monitor individual power draw.</p>
-      
-      <section className="grid-outlets">
-        {outlets.map((outlet) => (
-          <div key={outlet.id} className="glass-panel">
-            <div className="outlet-header">
-              <div className="outlet-title">
-                <Power size={20} color={outlet.state ? 'var(--accent-color)' : 'var(--text-muted)'} />
-                <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{outlet.name}</h3>
+      {/* Devices Section */}
+      <div>
+        <h2 style={{marginTop: '0.5rem'}}>Device Control</h2>
+        <div className="device-list">
+          {outlets.map((outlet) => (
+            <div key={outlet.id} className={`glass-panel device-card ${outlet.state ? 'active' : ''}`}>
+              <div className="device-info">
+                <div className="device-icon-box">
+                  <Power size={22} color={outlet.state ? 'var(--accent-color)' : 'var(--text-muted)'} />
+                </div>
+                <div>
+                  <div className="device-name">{outlet.name}</div>
+                  <div className="device-stats">
+                    <span><Zap size={12}/> <span className="stat-highlight">{outlet.power.toFixed(1)}</span> W</span>
+                    <span><Activity size={12}/> <span className="stat-highlight">{outlet.current.toFixed(2)}</span> A</span>
+                  </div>
+                </div>
               </div>
               <label className="toggle-switch">
                 <input 
@@ -222,26 +183,10 @@ function App() {
                 <span className="slider"></span>
               </label>
             </div>
-            
-            <div className="outlet-stats">
-              <div className="stat">
-                <div className="stat-label">Status</div>
-                <div className="stat-value" style={{ color: outlet.state ? 'var(--success-color)' : 'var(--text-muted)' }}>
-                  {outlet.state ? 'ON' : 'OFF'}
-                </div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Power</div>
-                <div className="stat-value">{outlet.power.toFixed(1)} W</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Current</div>
-                <div className="stat-value">{outlet.current.toFixed(2)} A</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </section>
+          ))}
+        </div>
+      </div>
+
     </div>
   );
 }
