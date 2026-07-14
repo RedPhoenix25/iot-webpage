@@ -7,7 +7,6 @@ import {
 
 import AnalogGauge from './components/AnalogGauge';
 import HistoricalGraph from './components/HistoricalGraph';
-import HistoryLookup from './components/HistoryLookup';
 
 function App() {
   const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
@@ -136,37 +135,16 @@ function App() {
         </div>
       </header>
 
-        <div className="grid-hero">
-          <div className="glass-panel hero-card">
-            <div>
-              <p className="hero-label">Total Power Load</p>
-              <div className="hero-value-container">
-                <span className="hero-value">{trueTotalPower.toFixed(1)}</span>
-                <span className="hero-unit">W</span>
-              </div>
-            </div>
-            <div className="hero-secondary">
-              <p className="hero-label">Main Voltage</p>
-              <div className="hero-value-container" style={{justifyContent: 'flex-end'}}>
-                <span className="hero-value" style={{color: 'var(--success-color)'}}>
-                  {envData.voltage !== null ? envData.voltage.toFixed(0) : '--'}
-                </span>
-                <span className="hero-unit">V</span>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Master Power Metrics (Gauge + Voltage + Current) */}
+      <AnalogGauge 
+        power={trueTotalPower} 
+        voltage={envData.voltage} 
+        current={envData.mainCurrent} 
+        max={5000} 
+      />
 
-        {/* Live Wattage Gauge */}
-        <div className="grid-overview">
-          <AnalogGauge value={trueTotalPower} max={5000} />
-        </div>
-
-        {/* Historical Graph */}
-        <HistoricalGraph />
-        
-        {/* Historical Lookup */}
-        <HistoryLookup />
+      {/* Historical Graph (Includes Lookup) */}
+      <HistoricalGraph />
 
       {/* Environment 2x2 Grid */}
       <div className="grid-2col">

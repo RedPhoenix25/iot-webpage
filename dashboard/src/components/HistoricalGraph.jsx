@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../firebase';
+import HistoryLookup from './HistoryLookup';
 
 const HistoricalGraph = () => {
   const [timeRange, setTimeRange] = useState('hourly'); // 'hourly', 'daily', 'weekly', 'monthly'
@@ -135,6 +136,9 @@ const HistoricalGraph = () => {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Embedded Historical Lookup */}
+      <HistoryLookup />
     </div>
   );
 };

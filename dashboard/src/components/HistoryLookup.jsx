@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ref, get } from 'firebase/database';
 import { db } from '../firebase';
-import { Search } from 'lucide-react';
+import { Search, Calendar } from 'lucide-react';
 
 const HistoryLookup = () => {
   const [date, setDate] = useState('');
@@ -34,10 +34,10 @@ const HistoryLookup = () => {
   };
 
   return (
-    <div className="glass-panel" style={{ marginTop: '2rem', gridColumn: '1 / -1' }}>
-      <h3>Historical Lookup</h3>
-      <p className="subtitle" style={{ marginBottom: '1rem' }}>Check power usage for a specific hour on any day.</p>
-      
+    <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+      <h4 style={{ color: 'var(--text-muted)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Calendar size={16} /> Exact Hour Lookup
+      </h4>
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <input 
           type="date" 
@@ -65,7 +65,7 @@ const HistoryLookup = () => {
         </button>
         
         {result !== null && (
-          <div style={{ marginLeft: 'auto', background: 'rgba(0, 229, 255, 0.1)', padding: '12px 24px', borderRadius: '8px', border: '1px solid var(--accent-color)' }}>
+          <div style={{ marginLeft: 'auto', background: 'rgba(0, 229, 255, 0.1)', padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--accent-color)' }}>
             <span style={{ color: 'var(--text-main)', marginRight: '8px' }}>Usage: </span>
             <span style={{ fontWeight: '800', color: 'var(--accent-color)', fontSize: '1.2rem', fontFamily: "'Outfit', sans-serif" }}>{result} Wh</span>
           </div>
