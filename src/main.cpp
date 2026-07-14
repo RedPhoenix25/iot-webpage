@@ -62,12 +62,41 @@ bool socket3State = false;
 bool socket4State = false;
 
 // Energy Tracking
-double hourlyEnergy = 0.0;
+double hourlyEnergyTotal = 0.0;
+double hourlyEnergyS1 = 0.0;
+double hourlyEnergyS2 = 0.0;
+double hourlyEnergyS3 = 0.0;
+double hourlyEnergyS4 = 0.0;
+
+// Voltage Analytics
+float hourlyVoltageSum = 0.0;
+int hourlyVoltageCount = 0;
+float hourlyVoltageMin = 999.0;
+float hourlyVoltageMax = 0.0;
+
 int currentHour = -1;
+
+// Safety Cutoff
+bool voltageFault = false;
+unsigned long voltageSafeStartTime = 0;
 
 unsigned long lastEnergyCalc = 0;
 unsigned long lastUpdate = 0;
 unsigned long lastFirebaseLog = 0;
+
+void updateRelays() {
+  if (voltageFault) {
+    digitalWrite(26, HIGH);
+    digitalWrite(27, HIGH);
+    digitalWrite(14, HIGH);
+    digitalWrite(13, HIGH);
+  } else {
+    digitalWrite(26, socket1State ? LOW : HIGH);
+    digitalWrite(27, socket2State ? LOW : HIGH);
+    digitalWrite(14, socket3State ? LOW : HIGH);
+    digitalWrite(13, socket4State ? LOW : HIGH);
+  }
+}
 
 // Simple rule engine for automated thresholds
 void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
@@ -83,7 +112,7 @@ void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
   // if (motion && !socket2State) { socket2State = true; digitalWrite(RELAY_SOCKET_2, HIGH); }
 }
 
-void calculateEnergy(float totalPowerW) {
+void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, float voltage) {
   DateTime now = rtcFound ? rtc.now() : DateTime((uint32_t)0);
   int thisHour = now.hour();
 
@@ -92,7 +121,15 @@ void calculateEnergy(float totalPowerW) {
   }
 
   if (thisHour != currentHour) {
-    hourlyEnergy = 0.0; // Reset hourly accumulator
+    hourlyEnergyTotal = 0.0;
+    hourlyEnergyS1 = 0.0;
+    hourlyEnergyS2 = 0.0;
+    hourlyEnergyS3 = 0.0;
+    hourlyEnergyS4 = 0.0;
+    hourlyVoltageSum = 0.0;
+    hourlyVoltageCount = 0;
+    hourlyVoltageMin = 999.0;
+    hourlyVoltageMax = 0.0;
     currentHour = thisHour;
   }
 
@@ -100,7 +137,18 @@ void calculateEnergy(float totalPowerW) {
   float elapsedHours = (currentTime - lastEnergyCalc) / 3600000.0; 
   lastEnergyCalc = currentTime;
 
-  hourlyEnergy += (totalPowerW * elapsedHours);
+  hourlyEnergyTotal += (totalPowerW * elapsedHours);
+  hourlyEnergyS1 += (p1 * elapsedHours);
+  hourlyEnergyS2 += (p2 * elapsedHours);
+  hourlyEnergyS3 += (p3 * elapsedHours);
+  hourlyEnergyS4 += (p4 * elapsedHours);
+
+  if (voltage > 10.0) { // filter bad zero readings
+    hourlyVoltageSum += voltage;
+    hourlyVoltageCount++;
+    if (voltage < hourlyVoltageMin) hourlyVoltageMin = voltage;
+    if (voltage > hourlyVoltageMax) hourlyVoltageMax = voltage;
+  }
 }
 
 void logEnergyToFirebase() {
@@ -118,7 +166,20 @@ void logEnergyToFirebase() {
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   
-  String payload = "{\"wh\":" + String(hourlyEnergy, 4) + "}";
+  float vAvg = hourlyVoltageCount > 0 ? (hourlyVoltageSum / hourlyVoltageCount) : 0.0;
+  float vMin = hourlyVoltageMin == 999.0 ? 0.0 : hourlyVoltageMin;
+  
+  String payload = "{";
+  payload += "\"total_wh\":" + String(hourlyEnergyTotal, 4) + ",";
+  payload += "\"s1_wh\":" + String(hourlyEnergyS1, 4) + ",";
+  payload += "\"s2_wh\":" + String(hourlyEnergyS2, 4) + ",";
+  payload += "\"s3_wh\":" + String(hourlyEnergyS3, 4) + ",";
+  payload += "\"s4_wh\":" + String(hourlyEnergyS4, 4) + ",";
+  payload += "\"v_avg\":" + String(vAvg, 2) + ",";
+  payload += "\"v_min\":" + String(vMin, 2) + ",";
+  payload += "\"v_max\":" + String(hourlyVoltageMax, 2);
+  payload += "}";
+  
   int httpResponseCode = http.PATCH(payload);
   
   if (httpResponseCode > 0) {
@@ -147,10 +208,31 @@ void sendUpdate() {
   float current3 = socket3State ? 2.5 : 0;
   float current4 = socket4State ? 0.1 : 0;
   
-  float power1 = voltage * current1;
-  float power2 = voltage * current2;
-  float power3 = voltage * current3;
-  float power4 = voltage * current4;
+  float mainCurrent = acsMain.getCurrentAC();
+  float mainVoltage = zmpt.getVoltageAC();
+  float trueTotalPower = mainCurrent * mainVoltage;
+  
+  // Safety check
+  if (mainVoltage < 180.0 || mainVoltage > 240.0) {
+    if (!voltageFault) {
+      voltageFault = true;
+      Serial.println("VOLTAGE FAULT! Cutting power to all sockets.");
+      updateRelays();
+    }
+    voltageSafeStartTime = 0; // reset safe timer
+  } else {
+    if (voltageFault) {
+      if (voltageSafeStartTime == 0) {
+        voltageSafeStartTime = millis();
+      } else if (millis() - voltageSafeStartTime > 10000) {
+        voltageFault = false;
+        Serial.println("VOLTAGE STABLE! Restoring power to sockets.");
+        updateRelays();
+      }
+    }
+  }
+  
+  float c1 = acs1.getCurrentAC();
 
   float totalPower = power1 + power2 + power3 + power4;
   int lightLevel = ldrState == HIGH ? 100 : 0;
@@ -191,15 +273,14 @@ void sendUpdate() {
     env["humidity"] = h;
   }
   
-  // Hardcoded to null (Offline) until physical sensors are actually connected.
-  // Analog/Digital pins "float" (pick up random noise) when disconnected, so they must be manually disabled.
   env["motion"] = nullptr; 
   env["lightLevel"] = nullptr; 
-  env["voltage"] = nullptr;
-  env["mainCurrent"] = nullptr;
   
-  env["voltage"] = nullptr;
-  env["mainCurrent"] = nullptr;
+  env["voltage"] = mainVoltage;
+  env["mainCurrent"] = mainCurrent;
+  
+  // Provide a fault flag to UI so it knows why everything is OFF
+  env["voltageFault"] = voltageFault;
 
   // Outlets
   JsonArray outlets = doc["outlets"].to<JsonArray>();
@@ -245,32 +326,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload, length);
-  if (error) {
-    Serial.println("deserializeJson() failed");
-    return;
-  }
-  
-  if (doc["action"] == "toggle") {
-    String id = doc["id"];
-    bool newState = doc["state"];
-    
-    if (id == "socket1") {
-      socket1State = newState;
-      digitalWrite(RELAY_SOCKET_1, socket1State ? HIGH : LOW);
-    } else if (id == "socket2") {
-      socket2State = newState;
-      digitalWrite(RELAY_SOCKET_2, socket2State ? HIGH : LOW);
-    } else if (id == "socket3") {
-      socket3State = newState;
-      digitalWrite(RELAY_SOCKET_3, socket3State ? HIGH : LOW);
-    } else if (id == "socket4") {
-      socket4State = newState;
-      digitalWrite(RELAY_SOCKET_4, socket4State ? HIGH : LOW);
+    if (topic == mqtt_topic_cmd) {
+      String message = "";
+      for (int i = 0; i < length; i++) message += (char)payload[i];
+      
+      int sepIndex = message.indexOf(':');
+      String id = message.substring(0, sepIndex);
+      bool state = message.substring(sepIndex + 1) == "ON";
+      
+      if (id == "socket1") socket1State = state;
+      else if (id == "socket2") socket2State = state;
+      else if (id == "socket3") socket3State = state;
+      else if (id == "socket4") socket4State = state;
+
+      updateRelays();
     }
     
     sendUpdate();
   }
-}
 
 void reconnectMQTT() {
   while (!mqttClient.connected() && WiFi.status() == WL_CONNECTED) {
@@ -391,10 +464,12 @@ void loop() {
   // Assumed nominal voltage of 220 for quick integration step
   float totalPowerW = 220.0 * (current1 + current2 + current3 + current4); 
 
-  // Run energy calculation rapidly to accumulate properly
-  calculateEnergy(totalPowerW);
-  
-  // Send WS update every 2 seconds
+  // Run energy calculation rapidly  float p4 = c4 * mainVoltage;
+
+  // Track Energy
+  calculateEnergy(trueTotalPower, p1, p2, p3, p4, mainVoltage);
+
+  // Generate JSON Payloadate every 2 seconds
   unsigned long nowMs = millis();
   if (nowMs - lastUpdate > 2000) {
     lastUpdate = nowMs;
