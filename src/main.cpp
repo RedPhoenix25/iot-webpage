@@ -292,8 +292,9 @@ void reconnectMQTT() {
     Serial.print("Attempting MQTT connection...");
     String clientId = "ESP32Client-";
     clientId += String(random(0xffff), HEX);
-    if (mqttClient.connect(clientId.c_str())) {
+    if (mqttClient.connect(clientId.c_str(), NULL, NULL, "iot-hub/redphoenix25-v1-x8f9a2/status", 0, true, "offline")) {
       Serial.println("connected to MQTT broker!");
+      mqttClient.publish("iot-hub/redphoenix25-v1-x8f9a2/status", "online", true);
       mqttClient.subscribe(mqtt_topic_cmd);
     } else {
       Serial.print("failed, rc=");

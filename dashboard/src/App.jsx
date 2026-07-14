@@ -9,8 +9,10 @@ function App() {
   const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
   const MQTT_TOPIC_DATA = 'iot-hub/redphoenix25-v1-x8f9a2/data';
   const MQTT_TOPIC_CMD = 'iot-hub/redphoenix25-v1-x8f9a2/cmd';
+  const MQTT_TOPIC_STATUS = 'iot-hub/redphoenix25-v1-x8f9a2/status';
 
-  const [connected, setConnected] = useState(false);
+  const [brokerConnected, setBrokerConnected] = useState(false);
+  const [deviceConnected, setDeviceConnected] = useState(false);
   const [socket, setSocket] = useState(null);
   
   const [envData, setEnvData] = useState({
@@ -33,12 +35,15 @@ function App() {
     const client = mqtt.connect(MQTT_BROKER);
     
     client.on('connect', () => {
-      setConnected(true);
+      setBrokerConnected(true);
       client.subscribe(MQTT_TOPIC_DATA);
+      client.subscribe(MQTT_TOPIC_STATUS);
     });
 
     client.on('message', (topic, message) => {
-      if (topic === MQTT_TOPIC_DATA) {
+      if (topic === MQTT_TOPIC_STATUS) {
+        setDeviceConnected(message.toString() === 'online');
+      } else if (topic === MQTT_TOPIC_DATA) {
         try {
           const data = JSON.parse(message.toString());
           if (data.env) setEnvData(data.env);
@@ -48,7 +53,10 @@ function App() {
       }
     });
 
-    client.on('close', () => setConnected(false));
+    client.on('close', () => {
+      setBrokerConnected(false);
+      setDeviceConnected(false);
+    });
     
     setSocket(client);
     return () => client.end();
@@ -56,7 +64,7 @@ function App() {
 
   const toggleOutlet = (id, currentState) => {
     setOutlets(outlets.map(o => o.id === id ? { ...o, state: !currentState } : o));
-    if (socket && connected) {
+    if (socket && brokerConnected) {
       socket.publish(MQTT_TOPIC_CMD, JSON.stringify({
         action: 'toggle', id: id, state: !currentState
       }));
@@ -77,11 +85,11 @@ function App() {
           <p className="subtitle">Live Hub Overview</p>
         </div>
         <div className="connection-status">
-          <div className={`status-indicator ${connected ? 'connected' : ''}`}></div>
-          {connected ? (
-            <span className="connected-text">Connected</span>
+          <div className={`status-indicator ${deviceConnected ? 'connected' : ''}`}></div>
+          {deviceConnected ? (
+            <span className="connected-text">Hub Online</span>
           ) : (
-            <span>Offline</span>
+            <span>Hub Offline</span>
           )}
         </div>
       </header>
