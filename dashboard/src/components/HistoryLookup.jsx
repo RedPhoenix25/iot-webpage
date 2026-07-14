@@ -43,22 +43,23 @@ const HistoryLookup = () => {
           type="date" 
           value={date} 
           onChange={(e) => setDate(e.target.value)} 
-          style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontFamily: 'Inter' }}
+          className="history-input"
         />
         
         <select 
           value={hour} 
           onChange={(e) => setHour(e.target.value)}
-          style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontFamily: 'Inter' }}
+          className="history-select"
         >
           {[...Array(24)].map((_, i) => (
-            <option key={i} value={i} style={{ color: 'black' }}>{i}:00 - {i+1}:00</option>
+            <option key={i} value={i}>{i}:00 - {i+1}:00</option>
           ))}
         </select>
         
         <button 
           onClick={handleSearch}
-          style={{ background: 'var(--accent-color)', color: '#090E17', padding: '12px 24px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
+          className="login-button"
+          style={{ width: 'auto', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}
         >
           <Search size={18} /> {loading ? 'Searching...' : 'Search'}
         </button>
