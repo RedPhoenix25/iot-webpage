@@ -11,3 +11,7 @@ dist-ssr/
 # System
 .DS_Store
 Thumbs.db
+
+# Secrets
+.env
+.env.*
