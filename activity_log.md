@@ -57,3 +57,4 @@
 - **Analog Meter**: Removed the static Daily/Weekly text cards in favor of a sleek SVG `AnalogGauge` component to display live wattage instantly.
 - **Multi-View Interactive Graph**: Integrated `recharts` to build a `HistoricalGraph` component. It dynamically queries the Firebase JSON tree and plots Hourly, Daily, Weekly, and Monthly aggregations.
 - **Historical Lookup Module**: Built a targeted querying tool allowing users to select a specific Date and Hour from a calendar to check exact power usage in the past.
+- **UI Bug Fix**: Wrapped the `HistoryLookup` modal in a React portal (`createPortal`) to attach it directly to the document body. This fixed an issue where the modal was trapped inside a new stacking context created by a parent element's `backdrop-filter`, making the calendar picker and close buttons unclickable.

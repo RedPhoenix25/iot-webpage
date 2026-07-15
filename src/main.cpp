@@ -201,16 +201,19 @@ void sendUpdate() {
   
   // Mock calculations for sensors
   int zmptRaw = analogRead(ZMPT101B_PIN);
-  float voltage = 220.0 + ((zmptRaw - 2048) / 4096.0) * 10.0; 
+  float mainVoltage = 220.0 + ((zmptRaw - 2048) / 4096.0) * 10.0; 
   
-  float current1 = socket1State ? 1.2 : 0;
-  float current2 = socket2State ? 0.8 : 0;
-  float current3 = socket3State ? 2.5 : 0;
-  float current4 = socket4State ? 0.1 : 0;
+  float c1 = socket1State ? 1.2 : 0;
+  float c2 = socket2State ? 0.8 : 0;
+  float c3 = socket3State ? 2.5 : 0;
+  float c4 = socket4State ? 0.1 : 0;
+  float mainCurrent = c1 + c2 + c3 + c4;
   
-  float mainCurrent = acsMain.getCurrentAC();
-  float mainVoltage = zmpt.getVoltageAC();
-  float trueTotalPower = mainCurrent * mainVoltage;
+  float power1 = c1 * mainVoltage;
+  float power2 = c2 * mainVoltage;
+  float power3 = c3 * mainVoltage;
+  float power4 = c4 * mainVoltage;
+  float totalPower = mainCurrent * mainVoltage;
   
   // Safety check
   if (mainVoltage < 180.0 || mainVoltage > 240.0) {
@@ -231,10 +234,7 @@ void sendUpdate() {
       }
     }
   }
-  
-  float c1 = acs1.getCurrentAC();
 
-  float totalPower = power1 + power2 + power3 + power4;
   int lightLevel = ldrState == HIGH ? 100 : 0;
 
   // Update LCD
@@ -243,7 +243,7 @@ void sendUpdate() {
   lcd.print("Pwr: ");
   lcd.print(totalPower, 1);
   lcd.print("W ");
-  lcd.print(voltage, 0);
+  lcd.print(mainVoltage, 0);
   lcd.print("V");
   lcd.setCursor(0, 1);
   if (WiFi.status() == WL_CONNECTED) {
@@ -290,28 +290,28 @@ void sendUpdate() {
   o1["name"] = "Socket 1 (Fan)";
   o1["state"] = socket1State;
   o1["power"] = power1;
-  o1["current"] = current1;
+  o1["current"] = c1;
 
   JsonObject o2 = outlets.add<JsonObject>();
   o2["id"] = "socket2";
   o2["name"] = "Socket 2";
   o2["state"] = socket2State;
   o2["power"] = power2;
-  o2["current"] = current2;
+  o2["current"] = c2;
 
   JsonObject o3 = outlets.add<JsonObject>();
   o3["id"] = "socket3";
   o3["name"] = "Socket 3";
   o3["state"] = socket3State;
   o3["power"] = power3;
-  o3["current"] = current3;
+  o3["current"] = c3;
 
   JsonObject o4 = outlets.add<JsonObject>();
   o4["id"] = "socket4";
   o4["name"] = "Socket 4";
   o4["state"] = socket4State;
   o4["power"] = power4;
-  o4["current"] = current4;
+  o4["current"] = c4;
 
   String jsonString;
   serializeJson(doc, jsonString);
@@ -324,26 +324,23 @@ void sendUpdate() {
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (strcmp(topic, mqtt_topic_cmd) != 0) return;
 
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, payload, length);
-    if (topic == mqtt_topic_cmd) {
-      String message = "";
-      for (int i = 0; i < length; i++) message += (char)payload[i];
-      
-      int sepIndex = message.indexOf(':');
-      String id = message.substring(0, sepIndex);
-      bool state = message.substring(sepIndex + 1) == "ON";
-      
-      if (id == "socket1") socket1State = state;
-      else if (id == "socket2") socket2State = state;
-      else if (id == "socket3") socket3State = state;
-      else if (id == "socket4") socket4State = state;
+  String message = "";
+  for (int i = 0; i < length; i++) message += (char)payload[i];
+  
+  int sepIndex = message.indexOf(':');
+  if (sepIndex == -1) return;
+  
+  String id = message.substring(0, sepIndex);
+  bool state = message.substring(sepIndex + 1) == "ON";
+  
+  if (id == "socket1") socket1State = state;
+  else if (id == "socket2") socket2State = state;
+  else if (id == "socket3") socket3State = state;
+  else if (id == "socket4") socket4State = state;
 
-      updateRelays();
-    }
-    
-    sendUpdate();
-  }
+  updateRelays();
+  sendUpdate();
+}
 
 void reconnectMQTT() {
   while (!mqttClient.connected() && WiFi.status() == WL_CONNECTED) {
@@ -456,20 +453,25 @@ void loop() {
     mqttClient.loop();
   }
   
-  // Calculate total power dynamically for energy calculation
-  float current1 = socket1State ? 1.2 : 0;
-  float current2 = socket2State ? 0.8 : 0;
-  float current3 = socket3State ? 2.5 : 0;
-  float current4 = socket4State ? 0.1 : 0;
-  // Assumed nominal voltage of 220 for quick integration step
-  float totalPowerW = 220.0 * (current1 + current2 + current3 + current4); 
-
-  // Run energy calculation rapidly  float p4 = c4 * mainVoltage;
+  // Mock calculations for sensors for energy tracking
+  int zmptRaw = analogRead(ZMPT101B_PIN);
+  float mainVoltage = 220.0 + ((zmptRaw - 2048) / 4096.0) * 10.0; 
+  float c1 = socket1State ? 1.2 : 0;
+  float c2 = socket2State ? 0.8 : 0;
+  float c3 = socket3State ? 2.5 : 0;
+  float c4 = socket4State ? 0.1 : 0;
+  float mainCurrent = c1 + c2 + c3 + c4;
+  
+  float p1 = c1 * mainVoltage;
+  float p2 = c2 * mainVoltage;
+  float p3 = c3 * mainVoltage;
+  float p4 = c4 * mainVoltage;
+  float trueTotalPower = mainCurrent * mainVoltage;
 
   // Track Energy
   calculateEnergy(trueTotalPower, p1, p2, p3, p4, mainVoltage);
 
-  // Generate JSON Payloadate every 2 seconds
+  // Send WS update every 2 seconds
   unsigned long nowMs = millis();
   if (nowMs - lastUpdate > 2000) {
     lastUpdate = nowMs;
