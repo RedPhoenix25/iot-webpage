@@ -18,15 +18,21 @@ const HistoryLookup = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [loadingCSV, setLoadingCSV] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+
+  const showToast = (message, type = 'info') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'info' }), 5000);
+  };
 
   const handleSearch = async () => {
     if (!date) return;
     setLoading(true);
     
-    const [year, month, day] = date.split('-');
-    const dbRef = ref(db, `energy_logs/${year}/${parseInt(month)}/${parseInt(day)}/${parseInt(hour)}`);
-    
     try {
+      const [year, month, day] = date.split('-');
+      const dbRef = ref(db, `energy_logs/${year}/${parseInt(month, 10)}/${parseInt(day, 10)}/${parseInt(hour, 10)}`);
+      
       const snapshot = await get(dbRef);
       if (snapshot.exists()) {
         setResult(snapshot.val());
@@ -35,6 +41,7 @@ const HistoryLookup = () => {
       }
     } catch (err) {
       console.error(err);
+      showToast("Search failed: " + err.message, 'error');
       setResult(null);
     }
     setLoading(false);
@@ -48,7 +55,7 @@ const HistoryLookup = () => {
       const logsRef = ref(db, 'energy_logs');
       const snapshot = await get(logsRef);
       if (!snapshot.exists()) {
-        alert("No data available.");
+        showToast("No data available.", 'error');
         setLoadingCSV(false);
         return;
       }
@@ -70,8 +77,8 @@ const HistoryLookup = () => {
               
               if (logDate >= start && logDate <= end) {
                 flatLogs.push({
-                  Date: `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`,
-                  Time: `${hour}:00`,
+                  Date: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,
+                  Time: `${String(hour).padStart(2,'0')}:00`,
                   Total_Wh: entry.total_wh || entry.wh || 0,
                   Socket1_Wh: entry.s1_wh || 0,
                   Socket2_Wh: entry.s2_wh || 0,
@@ -88,7 +95,7 @@ const HistoryLookup = () => {
       }
       
       if (flatLogs.length === 0) {
-        alert("No data found in this date range.");
+        showToast("No data found in this date range.", 'error');
         setLoadingCSV(false);
         return;
       }
@@ -109,7 +116,7 @@ const HistoryLookup = () => {
       
     } catch (err) {
       console.error(err);
-      alert("Error generating CSV.");
+      showToast("Error generating CSV: " + err.message, 'error');
     }
     setLoadingCSV(false);
   };
@@ -224,6 +231,20 @@ const HistoryLookup = () => {
               </div>
             )}
           </div>
+        </div>,
+        document.body
+      )}
+
+      {toast.show && createPortal(
+        <div style={{
+          position: 'fixed', bottom: '30px', left: '50%', transform: 'translateX(-50%)',
+          background: toast.type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(16, 185, 129, 0.95)',
+          color: 'white', padding: '12px 24px', borderRadius: '30px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', gap: '10px',
+          fontWeight: '600', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          {toast.message}
         </div>,
         document.body
       )}
