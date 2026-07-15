@@ -61,6 +61,7 @@ const HistoryLookup = () => {
           for (const day in rawData[year][month]) {
             for (const hour in rawData[year][month][day]) {
               const entry = rawData[year][month][day][hour];
+              if (!entry) continue;
               const logDate = new Date(year, month - 1, day, hour);
               
               const start = new Date(startDate);
@@ -94,15 +95,17 @@ const HistoryLookup = () => {
       
       const headers = Object.keys(flatLogs[0]).join(",");
       const rows = flatLogs.map(log => Object.values(log).join(","));
-      const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
+      const csvContent = [headers, ...rows].join("\n");
       
-      const encodedUri = encodeURI(csvContent);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
+      link.setAttribute("href", url);
       link.setAttribute("download", `energy_statement_${startDate}_to_${endDate}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
     } catch (err) {
       console.error(err);

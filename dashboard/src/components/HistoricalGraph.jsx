@@ -35,6 +35,7 @@ const HistoricalGraph = () => {
         for (const day in rawData[year][month]) {
           for (const hour in rawData[year][month][day]) {
             const entry = rawData[year][month][day][hour];
+            if (!entry) continue;
             flatLogs.push({
               date: new Date(year, month - 1, day, hour),
               wh: entry.total_wh || entry.wh || 0
