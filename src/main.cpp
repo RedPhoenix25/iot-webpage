@@ -98,7 +98,7 @@ float currentS3 = 0.0;
 float currentS4 = 0.0;
 
 // Calibration factors
-const float CAL_VOLTAGE = 0.437;
+const float CAL_VOLTAGE = 0.146;
 const float CAL_CURRENT_MAIN = 0.017;
 const float CAL_CURRENT_S1 = 0.017;
 const float CAL_CURRENT_S2 = 0.017;
@@ -133,10 +133,18 @@ static bool bulbOverride = false;     // true when LDR detected light while bulb
 
 void runAutomation(float temp, bool motionDetected, bool ldrLight) {
   // --- Rule 1: Temperature -> Fan (Socket 2) ---
-  if (temp > 30.0 && !socket2State) {
-    socket2State = true;
-    updateRelays();
-    Serial.println("Rule: Temp > 30.0C -> Socket 2 (Fan) ON.");
+  if (temp >= 30.0) {
+    if (!socket2State) {
+      socket2State = true;
+      updateRelays();
+      Serial.println("Rule: Temp >= 30.0C -> Socket 2 (Fan) ON.");
+    }
+  } else if (temp < 26.0) {
+    if (socket2State) {
+      socket2State = false;
+      updateRelays();
+      Serial.println("Rule: Temp < 26.0C -> Socket 2 (Fan) OFF.");
+    }
   }
 
   // --- Rule 2: Motion + LDR Smart Bulb (Socket 1) ---
@@ -540,10 +548,10 @@ void loop() {
     const int NUM_CYCLES = 3;
 
     for (int cyc = 0; cyc < NUM_CYCLES; cyc++) {
-      long zmptSumSq = 0, acsSumSq = 0;
-      long a1SumSq = 0, a2SumSq = 0, a3SumSq = 0, a4SumSq = 0;
-      long zmptSum = 0, acsSum = 0;
-      long a1Sum = 0, a2Sum = 0, a3Sum = 0, a4Sum = 0;
+      double zmptSumSq = 0, acsSumSq = 0;
+      double a1SumSq = 0, a2SumSq = 0, a3SumSq = 0, a4SumSq = 0;
+      double zmptSum = 0, acsSum = 0;
+      double a1Sum = 0, a2Sum = 0, a3Sum = 0, a4Sum = 0;
       int samples = 0;
       unsigned long startSample = millis();
       while (millis() - startSample < 20) {
@@ -556,21 +564,21 @@ void loop() {
         zmptSum += zRaw;  acsSum += aRaw;
         a1Sum += a1Raw;   a2Sum += a2Raw;
         a3Sum += a3Raw;   a4Sum += a4Raw;
-        zmptSumSq += zRaw * zRaw;   acsSumSq += aRaw * aRaw;
-        a1SumSq += a1Raw * a1Raw;   a2SumSq += a2Raw * a2Raw;
-        a3SumSq += a3Raw * a3Raw;   a4SumSq += a4Raw * a4Raw;
+        zmptSumSq += (double)zRaw * zRaw;   acsSumSq += (double)aRaw * aRaw;
+        a1SumSq += (double)a1Raw * a1Raw;   a2SumSq += (double)a2Raw * a2Raw;
+        a3SumSq += (double)a3Raw * a3Raw;   a4SumSq += (double)a4Raw * a4Raw;
         samples++;
       }
-      float zM  = (float)zmptSum / samples;  float aM  = (float)acsSum / samples;
-      float a1M = (float)a1Sum   / samples;  float a2M = (float)a2Sum  / samples;
-      float a3M = (float)a3Sum   / samples;  float a4M = (float)a4Sum  / samples;
+      float zM  = zmptSum / samples;  float aM  = acsSum / samples;
+      float a1M = a1Sum   / samples;  float a2M = a2Sum  / samples;
+      float a3M = a3Sum   / samples;  float a4M = a4Sum  / samples;
 
-      float zV  = ((float)zmptSumSq / samples) - (zM  * zM);
-      float aV  = ((float)acsSumSq  / samples) - (aM  * aM);
-      float a1V = ((float)a1SumSq   / samples) - (a1M * a1M);
-      float a2V = ((float)a2SumSq   / samples) - (a2M * a2M);
-      float a3V = ((float)a3SumSq   / samples) - (a3M * a3M);
-      float a4V = ((float)a4SumSq   / samples) - (a4M * a4M);
+      float zV  = (zmptSumSq / samples) - (zM  * zM);
+      float aV  = (acsSumSq  / samples) - (aM  * aM);
+      float a1V = (a1SumSq   / samples) - (a1M * a1M);
+      float a2V = (a2SumSq   / samples) - (a2M * a2M);
+      float a3V = (a3SumSq   / samples) - (a3M * a3M);
+      float a4V = (a4SumSq   / samples) - (a4M * a4M);
 
       // Store individual cycle RMS for ALL sensors' consistency check
       cycZ[cyc]   = zV  > 0 ? sqrt(zV)  : 0;
@@ -597,6 +605,13 @@ void loop() {
     
     // Scale to real values — gated by min consistency
     float instVoltage = zRmsAvg * CAL_VOLTAGE;
+
+    // Calibration log output to serial monitor
+    static unsigned long lastCalibLog = 0;
+    if (millis() - lastCalibLog > 2000) {
+      lastCalibLog = millis();
+      Serial.printf("CALIBRATION DEBUG: raw zRmsAvg = %.3f, instVoltage = %.2fV\n", zRmsAvg, instVoltage);
+    }
     // Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
     float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= 0.10f) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
     // Socket sensors: same consistency gate
