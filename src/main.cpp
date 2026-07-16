@@ -263,9 +263,18 @@ void logEnergyToFirebase() {
 }
 
 void sendUpdate() {
-  // Read Sensors
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
+  // Read Sensors with retry logic to harden against NaN failures
+  float t = NAN;
+  float h = NAN;
+  for (int i = 0; i < 3; i++) {
+    t = dht.readTemperature();
+    h = dht.readHumidity();
+    Serial.printf("DHT22 READ TRY %d: t=%.2f, h=%.2f\n", i+1, t, h);
+    if (!isnan(t) && !isnan(h)) {
+      break;
+    }
+    delay(200);
+  }
   int pirState = digitalRead(PIR_PIN);
   int ldrState = digitalRead(LDR_PIN);
   
@@ -611,14 +620,16 @@ void loop() {
     if (millis() - lastCalibLog > 2000) {
       lastCalibLog = millis();
       Serial.printf("CALIBRATION DEBUG: raw zRmsAvg = %.3f, instVoltage = %.2fV\n", zRmsAvg, instVoltage);
+      Serial.printf("CURRENT DEBUG: MainMin=%.3f, MainAvg=%.3f | S2Min=%.3f, S2Avg=%.3f\n",
+                    acsRmsMin, acsRmsAvg, a2RmsMin, a2RmsAvg);
     }
     // Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
-    float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= 0.10f) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
+    float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= 0.05f) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
     // Socket sensors: same consistency gate
-    float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= 0.10f) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
-    float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= 0.10f) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
-    float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= 0.10f) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
-    float instC4 = (a4RmsMin * CAL_CURRENT_S4 >= 0.10f) ? (a4RmsAvg * CAL_CURRENT_S4) : 0.0f;
+    float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= 0.05f) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
+    float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= 0.05f) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
+    float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= 0.05f) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
+    float instC4 = (a4RmsMin * CAL_CURRENT_S4 >= 0.05f) ? (a4RmsAvg * CAL_CURRENT_S4) : 0.0f;
     
     // EMA: 85% old value, 15% new — more resistant to single-cycle spikes
     static float smoothedVoltage = 0, smoothedCurrent = 0;
@@ -639,16 +650,21 @@ void loop() {
     
     // Apply noise floor thresholds and ensure OFF sockets are strictly 0
     currentVoltage  = (smoothedVoltage < 10.0f) ? 0 : smoothedVoltage;
-    currentAmperage = (smoothedCurrent < 0.10f) ? 0 : smoothedCurrent;
-    currentS1 = (socket1State && s1 >= 0.10f) ? s1 : 0;
-    currentS2 = (socket2State && s2 >= 0.10f) ? s2 : 0;
-    currentS3 = (socket3State && s3 >= 0.10f) ? s3 : 0;
-    currentS4 = (socket4State && s4 >= 0.10f) ? s4 : 0;
+    currentAmperage = (smoothedCurrent < 0.05f) ? 0 : smoothedCurrent;
+    currentS1 = (socket1State && s1 >= 0.05f) ? s1 : 0;
+    currentS2 = (socket2State && s2 >= 0.05f) ? s2 : 0;
+    currentS3 = (socket3State && s3 >= 0.05f) ? s3 : 0;
+    currentS4 = (socket4State && s4 >= 0.05f) ? s4 : 0;
+
+    // If no sockets are active, force total current to 0 (system self-draw is below threshold/ignored)
+    bool anySocketActive = socket1State || socket2State || socket3State || socket4State;
+    if (!anySocketActive) {
+      currentAmperage = 0;
+    }
 
     // Total power: use sum of socket readings (more reliable at low loads).
     // Fall back to main line measurement only when at least one socket is on and reporting.
     float socketPowerSum = (currentS1 + currentS2 + currentS3 + currentS4) * currentVoltage;
-    bool anySocketActive = socket1State || socket2State || socket3State || socket4State;
     currentPower = (anySocketActive && socketPowerSum > 0.5f)
                    ? socketPowerSum
                    : (currentAmperage * currentVoltage);
