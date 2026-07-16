@@ -105,6 +105,21 @@ const float CAL_CURRENT_S2 = 0.017;
 const float CAL_CURRENT_S3 = 0.017;
 const float CAL_CURRENT_S4 = 0.017;
 
+// Noise floor thresholds for each channel
+const float NOISE_FLOOR_MAIN = 0.08f;
+const float NOISE_FLOOR_S1   = 0.08f;
+const float NOISE_FLOOR_S2   = 0.08f;
+const float NOISE_FLOOR_S3   = 0.15f;
+const float NOISE_FLOOR_S4   = 0.15f;
+
+// Motion edge detection and bulb stay-on timer
+bool lastPhysicalPirState = false;
+bool softwareMotionActive = false;
+unsigned long softwareMotionStartTime = 0;
+unsigned long bulbOnStartTime = 0;
+bool automatedBulbTrigger = false;
+const unsigned long BULB_TIMEOUT_MS = 15000; // Bulb stays on for 15s
+
 // Safety Cutoff
 bool voltageFault = false;
 unsigned long voltageSafeStartTime = 0;
@@ -127,58 +142,45 @@ void updateRelays() {
   }
 }
 
-// Automation state machine variables
-static bool lastLdrState = false;    // previous LDR state (true = light detected)
-static bool bulbOverride = false;     // true when LDR detected light while bulb was ON
-
 void runAutomation(float temp, bool motionDetected, bool ldrLight) {
   // --- Rule 1: Temperature -> Fan (Socket 2) ---
-  if (temp >= 30.0) {
-    if (!socket2State) {
-      socket2State = true;
-      updateRelays();
-      Serial.println("Rule: Temp >= 30.0C -> Socket 2 (Fan) ON.");
-    }
-  } else if (temp < 26.0) {
-    if (socket2State) {
-      socket2State = false;
-      updateRelays();
-      Serial.println("Rule: Temp < 26.0C -> Socket 2 (Fan) OFF.");
+  if (!isnan(temp)) {
+    if (temp >= 30.0) {
+      if (!socket2State) {
+        socket2State = true;
+        updateRelays();
+        Serial.println("Rule: Temp >= 30.0C -> Socket 2 (Fan) ON.");
+      }
+    } else if (temp < 26.0) {
+      if (socket2State) {
+        socket2State = false;
+        updateRelays();
+        Serial.println("Rule: Temp < 26.0C -> Socket 2 (Fan) OFF.");
+      }
     }
   }
 
   // --- Rule 2: Motion + LDR Smart Bulb (Socket 1) ---
-  // Detect LDR state transition
-  bool ldrChanged = (ldrLight != lastLdrState);
-  lastLdrState = ldrLight;
-
-  if (motionDetected) {
-    if (!socket1State && !bulbOverride) {
-      // Motion detected, bulb is off and no override: turn ON bulb
+  // If bulb is OFF, it can turn ON if it is dark and motion is detected
+  if (!socket1State) {
+    if (!ldrLight && motionDetected) {
       socket1State = true;
+      automatedBulbTrigger = true;
+      bulbOnStartTime = millis();
       updateRelays();
-      Serial.println("Rule: Motion detected -> Socket 1 (Bulb) ON.");
-    } else if (socket1State && ldrChanged && ldrLight) {
-      // Bulb is on and LDR just detected light (feedback from bulb): turn OFF
-      socket1State = false;
-      bulbOverride = true;
-      updateRelays();
-      Serial.println("Rule: LDR triggered (light feedback) -> Socket 1 (Bulb) OFF. Override active.");
-    } else if (!socket1State && bulbOverride && ldrChanged && !ldrLight) {
-      // Bulb is off, override is active, and LDR just went dark again: turn back ON
-      socket1State = true;
-      bulbOverride = false;
-      updateRelays();
-      Serial.println("Rule: LDR went dark -> Socket 1 (Bulb) back ON. Override cleared.");
+      Serial.println("Rule: Motion + Dark -> Socket 1 (Bulb) ON.");
     }
   } else {
-    // No motion: turn OFF bulb and clear override
-    if (socket1State) {
-      socket1State = false;
-      updateRelays();
-      Serial.println("Rule: No motion -> Socket 1 (Bulb) OFF.");
+    // If bulb is ON, we ignore the LDR to prevent feedback loop.
+    // We turn it OFF only when the timeout has expired.
+    if (automatedBulbTrigger) {
+      if (millis() - bulbOnStartTime > BULB_TIMEOUT_MS) {
+        socket1State = false;
+        automatedBulbTrigger = false;
+        updateRelays();
+        Serial.println("Rule: Bulb stay-on timeout expired -> Socket 1 (Bulb) OFF.");
+      }
     }
-    bulbOverride = false;
   }
 }
 
@@ -318,7 +320,7 @@ void sendUpdate() {
   // LCD update has been moved to loop() to prevent flickering
 
   // Apply automations BEFORE sending the update
-  if (!isnan(t)) runAutomation(t, pirState == HIGH, ldrLight);
+  runAutomation(t, softwareMotionActive, ldrLight);
 
   // Build JSON
   JsonDocument doc;
@@ -338,7 +340,7 @@ void sendUpdate() {
     env["humidity"] = h;
   }
   
-  env["motion"] = (pirState == HIGH); 
+  env["motion"] = softwareMotionActive; 
   env["lightLevel"] = lightLevel; 
   
   env["voltage"] = mainVoltage;
@@ -401,7 +403,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   const char* target = doc["id"];
   
   if (command && target && strcmp(command, "toggle") == 0) {
-    if (strcmp(target, "socket1") == 0) socket1State = !socket1State;
+    if (strcmp(target, "socket1") == 0) {
+      socket1State = !socket1State;
+      automatedBulbTrigger = false; // Reset automated flag on manual override
+    }
     else if (strcmp(target, "socket2") == 0) socket2State = !socket2State;
     else if (strcmp(target, "socket3") == 0) socket3State = !socket3State;
     else if (strcmp(target, "socket4") == 0) socket4State = !socket4State;
@@ -512,6 +517,27 @@ void setup() {
 void loop() {
   wm.process(); // Handle captive portal in background
   
+  // Software motion edge detection and auto-clear timer
+  int currentPirVal = digitalRead(PIR_PIN);
+  if (currentPirVal == HIGH && !lastPhysicalPirState) {
+    lastPhysicalPirState = true;
+    softwareMotionActive = true;
+    softwareMotionStartTime = millis();
+    // If bulb is ON, reset its stay-on timer
+    if (socket1State) {
+      bulbOnStartTime = millis();
+      Serial.println("Motion detected -> Bulb timer extended.");
+    }
+  } else if (currentPirVal == LOW) {
+    lastPhysicalPirState = false;
+  }
+
+  // Auto-clear motion status on dashboard after 3 seconds
+  if (softwareMotionActive && (millis() - softwareMotionStartTime > 3000)) {
+    softwareMotionActive = false;
+    Serial.println("Motion cleared on dashboard.");
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     if (!mqttClient.connected()) {
       reconnectMQTT();
@@ -624,12 +650,12 @@ void loop() {
                     acsRmsMin, acsRmsAvg, a2RmsMin, a2RmsAvg);
     }
     // Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
-    float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= 0.05f) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
+    float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= NOISE_FLOOR_MAIN) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
     // Socket sensors: same consistency gate
-    float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= 0.05f) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
-    float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= 0.05f) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
-    float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= 0.05f) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
-    float instC4 = (a4RmsMin * CAL_CURRENT_S4 >= 0.05f) ? (a4RmsAvg * CAL_CURRENT_S4) : 0.0f;
+    float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= NOISE_FLOOR_S1) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
+    float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= NOISE_FLOOR_S2) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
+    float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= NOISE_FLOOR_S3) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
+    float instC4 = (a4RmsMin * CAL_CURRENT_S4 >= NOISE_FLOOR_S4) ? (a4RmsAvg * CAL_CURRENT_S4) : 0.0f;
     
     // EMA: 85% old value, 15% new — more resistant to single-cycle spikes
     static float smoothedVoltage = 0, smoothedCurrent = 0;
@@ -650,11 +676,11 @@ void loop() {
     
     // Apply noise floor thresholds and ensure OFF sockets are strictly 0
     currentVoltage  = (smoothedVoltage < 10.0f) ? 0 : smoothedVoltage;
-    currentAmperage = (smoothedCurrent < 0.05f) ? 0 : smoothedCurrent;
-    currentS1 = (socket1State && s1 >= 0.05f) ? s1 : 0;
-    currentS2 = (socket2State && s2 >= 0.05f) ? s2 : 0;
-    currentS3 = (socket3State && s3 >= 0.05f) ? s3 : 0;
-    currentS4 = (socket4State && s4 >= 0.05f) ? s4 : 0;
+    currentAmperage = (smoothedCurrent < NOISE_FLOOR_MAIN) ? 0 : smoothedCurrent;
+    currentS1 = (socket1State && s1 >= NOISE_FLOOR_S1) ? s1 : 0;
+    currentS2 = (socket2State && s2 >= NOISE_FLOOR_S2) ? s2 : 0;
+    currentS3 = (socket3State && s3 >= NOISE_FLOOR_S3) ? s3 : 0;
+    currentS4 = (socket4State && s4 >= NOISE_FLOOR_S4) ? s4 : 0;
 
     // If no sockets are active, force total current to 0 (system self-draw is below threshold/ignored)
     bool anySocketActive = socket1State || socket2State || socket3State || socket4State;
