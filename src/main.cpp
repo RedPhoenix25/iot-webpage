@@ -534,10 +534,9 @@ void loop() {
     lastTopUpdate = nowMs;
     
     // True AC RMS Sampling: 3 consecutive 20ms cycles
-    // Uses MIN across cycles as a consistency gate — real loads produce consistent signals;
-    // coupled AC noise from relay contacts is erratic and will fail the min check.
+    // ALL channels use MIN consistency gate: real loads are consistent, noise is erratic.
+    float cycZ[3], cycAcs[3];
     float cycA1[3], cycA2[3], cycA3[3], cycA4[3];
-    float sumZRms = 0, sumARms = 0;
     const int NUM_CYCLES = 3;
 
     for (int cyc = 0; cyc < NUM_CYCLES; cyc++) {
@@ -573,35 +572,34 @@ void loop() {
       float a3V = ((float)a3SumSq   / samples) - (a3M * a3M);
       float a4V = ((float)a4SumSq   / samples) - (a4M * a4M);
 
-      sumZRms += zV > 0 ? sqrt(zV) : 0;
-      sumARms += aV > 0 ? sqrt(aV) : 0;
-      // Store individual cycle RMS for socket consistency check
-      cycA1[cyc] = a1V > 0 ? sqrt(a1V) : 0;
-      cycA2[cyc] = a2V > 0 ? sqrt(a2V) : 0;
-      cycA3[cyc] = a3V > 0 ? sqrt(a3V) : 0;
-      cycA4[cyc] = a4V > 0 ? sqrt(a4V) : 0;
+      // Store individual cycle RMS for ALL sensors' consistency check
+      cycZ[cyc]   = zV  > 0 ? sqrt(zV)  : 0;
+      cycAcs[cyc] = aV  > 0 ? sqrt(aV)  : 0;
+      cycA1[cyc]  = a1V > 0 ? sqrt(a1V) : 0;
+      cycA2[cyc]  = a2V > 0 ? sqrt(a2V) : 0;
+      cycA3[cyc]  = a3V > 0 ? sqrt(a3V) : 0;
+      cycA4[cyc]  = a4V > 0 ? sqrt(a4V) : 0;
     }
 
-    // Main line: average across cycles
-    float zmptRms = sumZRms / NUM_CYCLES;
-    float acsRms  = sumARms / NUM_CYCLES;
+    // All sensors: use MINIMUM across all 3 cycles as the consistency gate
+    float zRmsAvg   = (cycZ[0]   + cycZ[1]   + cycZ[2])   / NUM_CYCLES;
+    float acsRmsMin = min(cycAcs[0], min(cycAcs[1], cycAcs[2]));
+    float acsRmsAvg = (cycAcs[0] + cycAcs[1] + cycAcs[2]) / NUM_CYCLES;
 
-    // Socket lines: use MINIMUM across all 3 cycles (consistency gate)
-    // If even one cycle reads below noise, it's likely inductive/capacitive coupling, not a real load
     float a1RmsMin = min(cycA1[0], min(cycA1[1], cycA1[2]));
     float a2RmsMin = min(cycA2[0], min(cycA2[1], cycA2[2]));
     float a3RmsMin = min(cycA3[0], min(cycA3[1], cycA3[2]));
     float a4RmsMin = min(cycA4[0], min(cycA4[1], cycA4[2]));
-    // Average used for scaling (more accurate magnitude), but gated by min
     float a1RmsAvg = (cycA1[0] + cycA1[1] + cycA1[2]) / NUM_CYCLES;
     float a2RmsAvg = (cycA2[0] + cycA2[1] + cycA2[2]) / NUM_CYCLES;
     float a3RmsAvg = (cycA3[0] + cycA3[1] + cycA3[2]) / NUM_CYCLES;
     float a4RmsAvg = (cycA4[0] + cycA4[1] + cycA4[2]) / NUM_CYCLES;
     
-    // Scale to real values
-    float instVoltage = zmptRms * CAL_VOLTAGE;
-    float instCurrent = acsRms  * CAL_CURRENT_MAIN;
-    // For sockets: only scale if min consistency gate passes the noise floor
+    // Scale to real values — gated by min consistency
+    float instVoltage = zRmsAvg * CAL_VOLTAGE;
+    // Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
+    float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= 0.10f) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
+    // Socket sensors: same consistency gate
     float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= 0.10f) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
     float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= 0.10f) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
     float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= 0.10f) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
@@ -625,13 +623,20 @@ void loop() {
     s4 = (s4 * 0.85f) + (instC4 * 0.15f);
     
     // Apply noise floor thresholds
-    currentVoltage  = (smoothedVoltage  < 10.0f) ? 0 : smoothedVoltage;
-    currentAmperage = (smoothedCurrent  < 0.10f) ? 0 : smoothedCurrent;
+    currentVoltage  = (smoothedVoltage < 10.0f) ? 0 : smoothedVoltage;
+    currentAmperage = (smoothedCurrent < 0.10f) ? 0 : smoothedCurrent;
     currentS1 = (s1 < 0.10f) ? 0 : s1;
     currentS2 = (s2 < 0.10f) ? 0 : s2;
     currentS3 = (s3 < 0.10f) ? 0 : s3;
     currentS4 = (s4 < 0.10f) ? 0 : s4;
-    currentPower = currentAmperage * currentVoltage;
+
+    // Total power: use sum of socket readings (more reliable at low loads).
+    // Fall back to main line measurement only when at least one socket is on and reporting.
+    float socketPowerSum = (currentS1 + currentS2 + currentS3 + currentS4) * currentVoltage;
+    bool anySocketActive = socket1State || socket2State || socket3State || socket4State;
+    currentPower = (anySocketActive && socketPowerSum > 0.5f)
+                   ? socketPowerSum
+                   : (currentAmperage * currentVoltage);
     
     float p1 = currentS1 * currentVoltage;
     float p2 = currentS2 * currentVoltage;
