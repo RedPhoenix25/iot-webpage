@@ -9,7 +9,15 @@
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
 #include <LiquidCrystal_I2C.h>
+
+WiFiManager wm;
 #include <HTTPClient.h>
+#include <time.h>
+
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 3600; // GMT+1
+const int   daylightOffset_sec = 0;
+bool sntpConfigured = false;
 
 // --- Configuration ---
 // WiFi credentials are now managed dynamically by WiFiManager!
@@ -24,9 +32,11 @@ const char* firebase_url = "https://iot-energy-hub-eea5f-default-rtdb.firebaseio
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-// RTC Module (DS3231)
-RTC_DS3231 rtc;
+// RTC Module (DS3231 / DS1307)
+RTC_DS3231 rtc3231;
+RTC_DS1307 rtc1307;
 bool rtcFound = false;
+bool useDS1307 = false;
 
 // --- Pins ---
 // 4-Channel Relay Module (Digital Outputs)
@@ -76,6 +86,25 @@ float hourlyVoltageMax = 0.0;
 
 int currentHour = -1;
 
+// Live Telemetry
+float currentVoltage = 0.0;
+float currentAmperage = 0.0;
+float currentPower = 0.0;
+
+// Individual Socket Telemetry
+float currentS1 = 0.0;
+float currentS2 = 0.0;
+float currentS3 = 0.0;
+float currentS4 = 0.0;
+
+// Calibration factors
+const float CAL_VOLTAGE = 0.437;
+const float CAL_CURRENT_MAIN = 0.017;
+const float CAL_CURRENT_S1 = 0.017;
+const float CAL_CURRENT_S2 = 0.017;
+const float CAL_CURRENT_S3 = 0.017;
+const float CAL_CURRENT_S4 = 0.017;
+
 // Safety Cutoff
 bool voltageFault = false;
 unsigned long voltageSafeStartTime = 0;
@@ -98,22 +127,55 @@ void updateRelays() {
   }
 }
 
-// Simple rule engine for automated thresholds
-void checkThresholds(float temp, float humidity, int lightLevel, bool motion) {
-  // Example Rule: Turn on Socket 1 (Fan) if Temp > 30.0 C
-  if (temp > 30.0 && !socket1State) {
-    socket1State = true;
-    digitalWrite(RELAY_SOCKET_1, HIGH);
-    Serial.println("Threshold Rule triggered: Temp > 30.0C -> Socket 1 (Fan) turned ON.");
+// Automation state machine variables
+static bool lastLdrState = false;    // previous LDR state (true = light detected)
+static bool bulbOverride = false;     // true when LDR detected light while bulb was ON
+
+void runAutomation(float temp, bool motionDetected, bool ldrLight) {
+  // --- Rule 1: Temperature -> Fan (Socket 2) ---
+  if (temp > 30.0 && !socket2State) {
+    socket2State = true;
+    updateRelays();
+    Serial.println("Rule: Temp > 30.0C -> Socket 2 (Fan) ON.");
   }
 
-  // Placeholder for future rules:
-  // if (lightLevel < 20 && !socket4State) { socket4State = true; digitalWrite(RELAY_SOCKET_4, HIGH); }
-  // if (motion && !socket2State) { socket2State = true; digitalWrite(RELAY_SOCKET_2, HIGH); }
+  // --- Rule 2: Motion + LDR Smart Bulb (Socket 1) ---
+  // Detect LDR state transition
+  bool ldrChanged = (ldrLight != lastLdrState);
+  lastLdrState = ldrLight;
+
+  if (motionDetected) {
+    if (!socket1State && !bulbOverride) {
+      // Motion detected, bulb is off and no override: turn ON bulb
+      socket1State = true;
+      updateRelays();
+      Serial.println("Rule: Motion detected -> Socket 1 (Bulb) ON.");
+    } else if (socket1State && ldrChanged && ldrLight) {
+      // Bulb is on and LDR just detected light (feedback from bulb): turn OFF
+      socket1State = false;
+      bulbOverride = true;
+      updateRelays();
+      Serial.println("Rule: LDR triggered (light feedback) -> Socket 1 (Bulb) OFF. Override active.");
+    } else if (!socket1State && bulbOverride && ldrChanged && !ldrLight) {
+      // Bulb is off, override is active, and LDR just went dark again: turn back ON
+      socket1State = true;
+      bulbOverride = false;
+      updateRelays();
+      Serial.println("Rule: LDR went dark -> Socket 1 (Bulb) back ON. Override cleared.");
+    }
+  } else {
+    // No motion: turn OFF bulb and clear override
+    if (socket1State) {
+      socket1State = false;
+      updateRelays();
+      Serial.println("Rule: No motion -> Socket 1 (Bulb) OFF.");
+    }
+    bulbOverride = false;
+  }
 }
 
 void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, float voltage) {
-  DateTime now = rtcFound ? rtc.now() : DateTime((uint32_t)0);
+  DateTime now = rtcFound ? (useDS1307 ? rtc1307.now() : rtc3231.now()) : DateTime((uint32_t)0);
   int thisHour = now.hour();
 
   if (currentHour == -1) {
@@ -154,7 +216,7 @@ void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, 
 void logEnergyToFirebase() {
   if (WiFi.status() != WL_CONNECTED || !rtcFound) return;
 
-  DateTime now = rtc.now();
+  DateTime now = useDS1307 ? rtc1307.now() : rtc3231.now();
   int year = now.year();
   int month = now.month();
   int day = now.day();
@@ -199,15 +261,13 @@ void sendUpdate() {
   int pirState = digitalRead(PIR_PIN);
   int ldrState = digitalRead(LDR_PIN);
   
-  // Mock calculations for sensors
-  int zmptRaw = analogRead(ZMPT101B_PIN);
-  float mainVoltage = 220.0 + ((zmptRaw - 2048) / 4096.0) * 10.0; 
+  float mainVoltage = currentVoltage;
+  float mainCurrent = currentAmperage;
   
-  float c1 = socket1State ? 1.2 : 0;
-  float c2 = socket2State ? 0.8 : 0;
-  float c3 = socket3State ? 2.5 : 0;
-  float c4 = socket4State ? 0.1 : 0;
-  float mainCurrent = c1 + c2 + c3 + c4;
+  float c1 = socket1State ? currentS1 : 0;
+  float c2 = socket2State ? currentS2 : 0;
+  float c3 = socket3State ? currentS3 : 0;
+  float c4 = socket4State ? currentS4 : 0;
   
   float power1 = c1 * mainVoltage;
   float power2 = c2 * mainVoltage;
@@ -235,25 +295,13 @@ void sendUpdate() {
     }
   }
 
-  int lightLevel = ldrState == HIGH ? 100 : 0;
+  int lightLevel = ldrState == LOW ? 100 : 0; // LM393 modules usually pull LOW when bright
+  bool ldrLight = (ldrState == LOW);           // true = light detected
 
-  // Update LCD
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Pwr: ");
-  lcd.print(totalPower, 1);
-  lcd.print("W ");
-  lcd.print(mainVoltage, 0);
-  lcd.print("V");
-  lcd.setCursor(0, 1);
-  if (WiFi.status() == WL_CONNECTED) {
-    lcd.print(WiFi.localIP().toString());
-  } else {
-    lcd.print("Offline");
-  }
+  // LCD update has been moved to loop() to prevent flickering
 
   // Apply automations BEFORE sending the update
-  checkThresholds(t, h, lightLevel, pirState == HIGH);
+  if (!isnan(t)) runAutomation(t, pirState == HIGH, ldrLight);
 
   // Build JSON
   JsonDocument doc;
@@ -273,8 +321,8 @@ void sendUpdate() {
     env["humidity"] = h;
   }
   
-  env["motion"] = nullptr; 
-  env["lightLevel"] = nullptr; 
+  env["motion"] = (pirState == HIGH); 
+  env["lightLevel"] = lightLevel; 
   
   env["voltage"] = mainVoltage;
   env["mainCurrent"] = mainCurrent;
@@ -287,14 +335,14 @@ void sendUpdate() {
   
   JsonObject o1 = outlets.add<JsonObject>();
   o1["id"] = "socket1";
-  o1["name"] = "Socket 1 (Fan)";
+  o1["name"] = "Socket 1 (Bulb)";
   o1["state"] = socket1State;
   o1["power"] = power1;
   o1["current"] = c1;
 
   JsonObject o2 = outlets.add<JsonObject>();
   o2["id"] = "socket2";
-  o2["name"] = "Socket 2";
+  o2["name"] = "Socket 2 (Fan)";
   o2["state"] = socket2State;
   o2["power"] = power2;
   o2["current"] = c2;
@@ -324,22 +372,26 @@ void sendUpdate() {
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (strcmp(topic, mqtt_topic_cmd) != 0) return;
 
-  String message = "";
-  for (int i = 0; i < length; i++) message += (char)payload[i];
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+  if (error) {
+    Serial.print("MQTT JSON Error: ");
+    Serial.println(error.c_str());
+    return;
+  }
   
-  int sepIndex = message.indexOf(':');
-  if (sepIndex == -1) return;
+  const char* command = doc["action"];
+  const char* target = doc["id"];
   
-  String id = message.substring(0, sepIndex);
-  bool state = message.substring(sepIndex + 1) == "ON";
-  
-  if (id == "socket1") socket1State = state;
-  else if (id == "socket2") socket2State = state;
-  else if (id == "socket3") socket3State = state;
-  else if (id == "socket4") socket4State = state;
-
-  updateRelays();
-  sendUpdate();
+  if (command && target && strcmp(command, "toggle") == 0) {
+    if (strcmp(target, "socket1") == 0) socket1State = !socket1State;
+    else if (strcmp(target, "socket2") == 0) socket2State = !socket2State;
+    else if (strcmp(target, "socket3") == 0) socket3State = !socket3State;
+    else if (strcmp(target, "socket4") == 0) socket4State = !socket4State;
+    
+    updateRelays();
+    sendUpdate();
+  }
 }
 
 void reconnectMQTT() {
@@ -378,6 +430,26 @@ void setup() {
   pinMode(LDR_PIN, INPUT);
   dht.begin();
 
+  // Initialize I2C Bus
+  Wire.begin(21, 22); // Explicitly start I2C on default pins
+  delay(100); // Give devices a moment to power up
+
+  // Initialize RTC (Try DS3231 first, then DS1307)
+  if (rtc3231.begin()) {
+    rtcFound = true;
+    useDS1307 = false;
+    Serial.println("Found DS3231 RTC");
+    rtc3231.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  } else if (rtc1307.begin()) {
+    rtcFound = true;
+    useDS1307 = true;
+    Serial.println("Found DS1307 RTC");
+    rtc1307.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  } else {
+    Serial.println("Couldn't find any RTC");
+    rtcFound = false;
+  }
+
   // Initialize LCD
   lcd.init();
   lcd.backlight();
@@ -386,46 +458,20 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Starting...");
   
-  // Initialize RTC
-  if (!rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    rtcFound = false;
-  } else {
-    rtcFound = true;
-    if (rtc.lostPower()) {
-      Serial.println("RTC lost power, let's set the time!");
-      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    }
-  }
-  
-  // Connect Wi-Fi with custom retry logic
+  // Connect Wi-Fi with non-blocking WiFiManager
   WiFi.mode(WIFI_STA);
+  wm.setConfigPortalBlocking(false);
+  
   if (WiFi.SSID() != "") {
     Serial.print("Attempting to connect to known network: ");
     Serial.println(WiFi.SSID());
-    WiFi.begin();
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 5) {
-      delay(5000); // 5 second interval
-      Serial.print(".");
-      attempts++;
-    }
   }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nCould not connect to known network after 5 attempts. Starting Access Point...");
-    WiFiManager wifiManager;
-    
-    // Uncomment the line below to erase saved Wi-Fi credentials
-    // wifiManager.resetSettings();
-    
-    // Force the Captive Portal to open since connection failed
-    if (!wifiManager.startConfigPortal("IoT-Hub-AP")) {
-      Serial.println("Failed to connect and hit timeout. Rebooting...");
-      ESP.restart();
-      delay(1000);
-    }
+  
+  if (!wm.autoConnect("IoT-Hub-AP")) {
+    Serial.println("Config portal running in background");
+  } else {
+    Serial.println("\nWiFi connected successfully!");
+    Serial.println(WiFi.localIP());
   }
   
   Serial.println("\nWiFi connected successfully!");
@@ -441,11 +487,14 @@ void setup() {
   // Setup MQTT
   mqttClient.setServer(mqtt_server, mqtt_port);
   mqttClient.setCallback(mqttCallback);
+  mqttClient.setBufferSize(1024);
 
   lastEnergyCalc = millis();
 }
 
 void loop() {
+  wm.process(); // Handle captive portal in background
+  
   if (WiFi.status() == WL_CONNECTED) {
     if (!mqttClient.connected()) {
       reconnectMQTT();
@@ -453,26 +502,174 @@ void loop() {
     mqttClient.loop();
   }
   
-  // Mock calculations for sensors for energy tracking
-  int zmptRaw = analogRead(ZMPT101B_PIN);
-  float mainVoltage = 220.0 + ((zmptRaw - 2048) / 4096.0) * 10.0; 
-  float c1 = socket1State ? 1.2 : 0;
-  float c2 = socket2State ? 0.8 : 0;
-  float c3 = socket3State ? 2.5 : 0;
-  float c4 = socket4State ? 0.1 : 0;
-  float mainCurrent = c1 + c2 + c3 + c4;
-  
-  float p1 = c1 * mainVoltage;
-  float p2 = c2 * mainVoltage;
-  float p3 = c3 * mainVoltage;
-  float p4 = c4 * mainVoltage;
-  float trueTotalPower = mainCurrent * mainVoltage;
-
-  // Track Energy
-  calculateEnergy(trueTotalPower, p1, p2, p3, p4, mainVoltage);
-
-  // Send WS update every 2 seconds
   unsigned long nowMs = millis();
+
+  // Handle SNTP Sync
+  if (WiFi.status() == WL_CONNECTED && !sntpConfigured) {
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    sntpConfigured = true;
+  }
+  
+  static unsigned long lastTimeSync = 0;
+  if (WiFi.status() == WL_CONNECTED && (nowMs - lastTimeSync > 3600000 || lastTimeSync == 0)) {
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo, 10)) { // 10ms wait
+      if (rtcFound && timeinfo.tm_year > 120) {
+        if (useDS1307) {
+          rtc1307.adjust(DateTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
+        } else {
+          rtc3231.adjust(DateTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
+        }
+        Serial.println("RTC synced with NTP");
+        lastTimeSync = nowMs;
+      }
+    }
+  }
+
+  static unsigned long lastTopUpdate = 0;
+  static unsigned long lastScrollUpdate = 0;
+  static int scrollIndex = 0;
+  
+  if (nowMs - lastTopUpdate >= 2000) {
+    lastTopUpdate = nowMs;
+    
+    // True AC RMS Sampling: 3 consecutive 20ms cycles averaged to reduce spike sensitivity
+    float sumZRms = 0, sumARms = 0;
+    float sumA1Rms = 0, sumA2Rms = 0, sumA3Rms = 0, sumA4Rms = 0;
+    const int NUM_CYCLES = 3;
+
+    for (int cyc = 0; cyc < NUM_CYCLES; cyc++) {
+      long zmptSumSq = 0, acsSumSq = 0;
+      long a1SumSq = 0, a2SumSq = 0, a3SumSq = 0, a4SumSq = 0;
+      long zmptSum = 0, acsSum = 0;
+      long a1Sum = 0, a2Sum = 0, a3Sum = 0, a4Sum = 0;
+      int samples = 0;
+      unsigned long startSample = millis();
+      while (millis() - startSample < 20) { // 20ms = 1 full cycle at 50Hz
+        long zRaw = analogRead(ZMPT101B_PIN);
+        long aRaw = analogRead(ACS712_MAIN);
+        long a1Raw = analogRead(ACS712_PIN1);
+        long a2Raw = analogRead(ACS712_PIN2);
+        long a3Raw = analogRead(ACS712_PIN3);
+        long a4Raw = analogRead(ACS712_PIN4);
+        zmptSum += zRaw;  acsSum += aRaw;
+        a1Sum += a1Raw;   a2Sum += a2Raw;
+        a3Sum += a3Raw;   a4Sum += a4Raw;
+        zmptSumSq += zRaw * zRaw;   acsSumSq += aRaw * aRaw;
+        a1SumSq += a1Raw * a1Raw;   a2SumSq += a2Raw * a2Raw;
+        a3SumSq += a3Raw * a3Raw;   a4SumSq += a4Raw * a4Raw;
+        samples++;
+      }
+      float zM = (float)zmptSum / samples;  float aM = (float)acsSum / samples;
+      float a1M = (float)a1Sum / samples;   float a2M = (float)a2Sum / samples;
+      float a3M = (float)a3Sum / samples;   float a4M = (float)a4Sum / samples;
+
+      float zV  = ((float)zmptSumSq / samples) - (zM * zM);
+      float aV  = ((float)acsSumSq  / samples) - (aM * aM);
+      float a1V = ((float)a1SumSq   / samples) - (a1M * a1M);
+      float a2V = ((float)a2SumSq   / samples) - (a2M * a2M);
+      float a3V = ((float)a3SumSq   / samples) - (a3M * a3M);
+      float a4V = ((float)a4SumSq   / samples) - (a4M * a4M);
+
+      sumZRms  += zV  > 0 ? sqrt(zV)  : 0;
+      sumARms  += aV  > 0 ? sqrt(aV)  : 0;
+      sumA1Rms += a1V > 0 ? sqrt(a1V) : 0;
+      sumA2Rms += a2V > 0 ? sqrt(a2V) : 0;
+      sumA3Rms += a3V > 0 ? sqrt(a3V) : 0;
+      sumA4Rms += a4V > 0 ? sqrt(a4V) : 0;
+    }
+
+    float zmptRms = sumZRms  / NUM_CYCLES;
+    float acsRms  = sumARms  / NUM_CYCLES;
+    float a1Rms   = sumA1Rms / NUM_CYCLES;
+    float a2Rms   = sumA2Rms / NUM_CYCLES;
+    float a3Rms   = sumA3Rms / NUM_CYCLES;
+    float a4Rms   = sumA4Rms / NUM_CYCLES;
+    
+    // Scale to real values
+    float instVoltage = zmptRms * CAL_VOLTAGE;
+    float instCurrent = acsRms  * CAL_CURRENT_MAIN;
+    float instC1 = a1Rms * CAL_CURRENT_S1;
+    float instC2 = a2Rms * CAL_CURRENT_S2;
+    float instC3 = a3Rms * CAL_CURRENT_S3;
+    float instC4 = a4Rms * CAL_CURRENT_S4;
+    
+    // EMA: 85% old value, 15% new — more resistant to single-cycle spikes
+    static float smoothedVoltage = 0, smoothedCurrent = 0;
+    static float s1 = 0, s2 = 0, s3 = 0, s4 = 0;
+    
+    if (smoothedVoltage == 0) {
+      smoothedVoltage = instVoltage;
+      smoothedCurrent = instCurrent;
+      s1 = instC1; s2 = instC2; s3 = instC3; s4 = instC4;
+    }
+    
+    smoothedVoltage = (smoothedVoltage * 0.85f) + (instVoltage * 0.15f);
+    smoothedCurrent = (smoothedCurrent * 0.85f) + (instCurrent * 0.15f);
+    s1 = (s1 * 0.85f) + (instC1 * 0.15f);
+    s2 = (s2 * 0.85f) + (instC2 * 0.15f);
+    s3 = (s3 * 0.85f) + (instC3 * 0.15f);
+    s4 = (s4 * 0.85f) + (instC4 * 0.15f);
+    
+    // Apply noise floor thresholds
+    currentVoltage  = (smoothedVoltage  < 10.0f) ? 0 : smoothedVoltage;
+    currentAmperage = (smoothedCurrent  < 0.10f) ? 0 : smoothedCurrent;
+    currentS1 = (s1 < 0.10f) ? 0 : s1;
+    currentS2 = (s2 < 0.10f) ? 0 : s2;
+    currentS3 = (s3 < 0.10f) ? 0 : s3;
+    currentS4 = (s4 < 0.10f) ? 0 : s4;
+    currentPower = currentAmperage * currentVoltage;
+    
+    float p1 = currentS1 * currentVoltage;
+    float p2 = currentS2 * currentVoltage;
+    float p3 = currentS3 * currentVoltage;
+    float p4 = currentS4 * currentVoltage;
+
+    // Track Energy
+    calculateEnergy(currentPower, p1, p2, p3, p4, currentVoltage);
+  
+    // LCD Top Row — uses currentVoltage globals to stay in sync with dashboard
+    char topStr[17];
+    snprintf(topStr, sizeof(topStr), "%-3.0fV %-3.1fA %-4.0fW",
+             currentVoltage, currentAmperage, currentPower);
+    while(strlen(topStr) < 16) strcat(topStr, " ");
+    lcd.setCursor(0, 0);
+    lcd.print(topStr);
+  }
+
+  if (nowMs - lastScrollUpdate >= 350) { // 350ms scroll speed
+    lastScrollUpdate = nowMs;
+    
+    String fullText;
+    if (WiFi.status() != WL_CONNECTED) {
+      fullText = "   No Internet Connection   ";
+    } else {
+      char timeStr[20];
+      struct tm timeinfo;
+      if (getLocalTime(&timeinfo, 10)) {
+        sprintf(timeStr, "Time: %02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+      } else if (rtcFound) {
+        DateTime now = useDS1307 ? rtc1307.now() : rtc3231.now();
+        sprintf(timeStr, "Time: %02d:%02d:%02d", now.hour(), now.minute(), now.second());
+      } else {
+        strcpy(timeStr, "Time: --:--:--");
+      }
+      fullText = String(timeStr) + "   Status: Online   ";
+    }
+    
+    int len = fullText.length();
+    String disp = "";
+    for (int i = 0; i < 16; i++) {
+      disp += fullText[(scrollIndex + i) % len];
+    }
+    
+    lcd.setCursor(0, 1);
+    lcd.print(disp);
+    
+    scrollIndex = (scrollIndex + 1) % len;
+  }
+
+  // Handle OTA updates every 2 seconds
   if (nowMs - lastUpdate > 2000) {
     lastUpdate = nowMs;
     sendUpdate();
