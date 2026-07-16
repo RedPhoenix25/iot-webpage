@@ -98,19 +98,19 @@ float currentS3 = 0.0;
 float currentS4 = 0.0;
 
 // Calibration factors
-const float CAL_VOLTAGE = 0.146;
-const float CAL_CURRENT_MAIN = 0.017;
-const float CAL_CURRENT_S1 = 0.017;
-const float CAL_CURRENT_S2 = 0.017;
-const float CAL_CURRENT_S3 = 0.017;
-const float CAL_CURRENT_S4 = 0.017;
+const float CAL_VOLTAGE = 0.146f;
+const float CAL_CURRENT_MAIN = 0.017f;
+const float CAL_CURRENT_S1 = 0.017f;
+const float CAL_CURRENT_S2 = 0.017f;
+const float CAL_CURRENT_S3 = 0.017f;
+const float CAL_CURRENT_S4 = 0.017f;
 
-// Noise floor thresholds for each channel
-const float NOISE_FLOOR_MAIN = 0.08f;
-const float NOISE_FLOOR_S1   = 0.10f;
-const float NOISE_FLOOR_S2   = 0.10f;
-const float NOISE_FLOOR_S3   = 0.12f;
-const float NOISE_FLOOR_S4   = 0.12f;
+// Raw RMS noise offsets (in ADC counts) when relays are ON
+const float NOISE_RMS_MAIN = 4.0f;
+const float NOISE_RMS_S1   = 4.5f;
+const float NOISE_RMS_S2   = 4.5f;
+const float NOISE_RMS_S3   = 6.0f;
+const float NOISE_RMS_S4   = 6.0f;
 
 // Motion edge detection and bulb stay-on timer
 bool lastPhysicalPirState = false;
@@ -642,8 +642,21 @@ void loop() {
     float a3RmsAvg = (cycA3[0] + cycA3[1] + cycA3[2]) / NUM_CYCLES;
     float a4RmsAvg = (cycA4[0] + cycA4[1] + cycA4[2]) / NUM_CYCLES;
     
-    // Scale to real values — gated by min consistency
+    // Scale to real values
     float instVoltage = zRmsAvg * CAL_VOLTAGE;
+
+    // Apply quadratic noise subtraction to recover clean signal RMS (subtracting base noise floor)
+    float acsRmsClean = sqrt(max(0.0f, (acsRmsAvg * acsRmsAvg) - (NOISE_RMS_MAIN * NOISE_RMS_MAIN)));
+    float a1RmsClean  = sqrt(max(0.0f, (a1RmsAvg * a1RmsAvg) - (NOISE_RMS_S1 * NOISE_RMS_S1)));
+    float a2RmsClean  = sqrt(max(0.0f, (a2RmsAvg * a2RmsAvg) - (NOISE_RMS_S2 * NOISE_RMS_S2)));
+    float a3RmsClean  = sqrt(max(0.0f, (a3RmsAvg * a3RmsAvg) - (NOISE_RMS_S3 * NOISE_RMS_S3)));
+    float a4RmsClean  = sqrt(max(0.0f, (a4RmsAvg * a4RmsAvg) - (NOISE_RMS_S4 * NOISE_RMS_S4)));
+
+    float acsMinClean = sqrt(max(0.0f, (acsRmsMin * acsRmsMin) - (NOISE_RMS_MAIN * NOISE_RMS_MAIN)));
+    float a1MinClean  = sqrt(max(0.0f, (a1RmsMin * a1RmsMin) - (NOISE_RMS_S1 * NOISE_RMS_S1)));
+    float a2MinClean  = sqrt(max(0.0f, (a2RmsMin * a2RmsMin) - (NOISE_RMS_S2 * NOISE_RMS_S2)));
+    float a3MinClean  = sqrt(max(0.0f, (a3RmsMin * a3RmsMin) - (NOISE_RMS_S3 * NOISE_RMS_S3)));
+    float a4MinClean  = sqrt(max(0.0f, (a4RmsMin * a4RmsMin) - (NOISE_RMS_S4 * NOISE_RMS_S4)));
 
     // Calibration log output to serial monitor
     static unsigned long lastCalibLog = 0;
@@ -654,12 +667,12 @@ void loop() {
                     acsRmsMin, acsRmsAvg, a2RmsMin, a2RmsAvg);
     }
     // Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
-    float instCurrent = (acsRmsMin * CAL_CURRENT_MAIN >= NOISE_FLOOR_MAIN) ? (acsRmsAvg * CAL_CURRENT_MAIN) : 0.0f;
+    float instCurrent = (acsMinClean * CAL_CURRENT_MAIN >= 0.03f) ? (acsRmsClean * CAL_CURRENT_MAIN) : 0.0f;
     // Socket sensors: same consistency gate
-    float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= NOISE_FLOOR_S1) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
-    float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= NOISE_FLOOR_S2) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
-    float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= NOISE_FLOOR_S3) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
-    float instC4 = (a4RmsMin * CAL_CURRENT_S4 >= NOISE_FLOOR_S4) ? (a4RmsAvg * CAL_CURRENT_S4) : 0.0f;
+    float instC1 = (a1MinClean * CAL_CURRENT_S1 >= 0.03f) ? (a1RmsClean * CAL_CURRENT_S1) : 0.0f;
+    float instC2 = (a2MinClean * CAL_CURRENT_S2 >= 0.03f) ? (a2RmsClean * CAL_CURRENT_S2) : 0.0f;
+    float instC3 = (a3MinClean * CAL_CURRENT_S3 >= 0.03f) ? (a3RmsClean * CAL_CURRENT_S3) : 0.0f;
+    float instC4 = (a4MinClean * CAL_CURRENT_S4 >= 0.03f) ? (a4RmsClean * CAL_CURRENT_S4) : 0.0f;
     
     // EMA: 85% old value, 15% new — more resistant to single-cycle spikes
     static float smoothedVoltage = 0, smoothedCurrent = 0;
@@ -680,11 +693,11 @@ void loop() {
     
     // Apply noise floor thresholds and ensure OFF sockets are strictly 0
     currentVoltage  = (smoothedVoltage < 10.0f) ? 0 : smoothedVoltage;
-    currentAmperage = (smoothedCurrent < NOISE_FLOOR_MAIN) ? 0 : smoothedCurrent;
-    currentS1 = (socket1State && s1 >= NOISE_FLOOR_S1) ? s1 : 0;
-    currentS2 = (socket2State && s2 >= NOISE_FLOOR_S2) ? s2 : 0;
-    currentS3 = (socket3State && s3 >= NOISE_FLOOR_S3) ? s3 : 0;
-    currentS4 = (socket4State && s4 >= NOISE_FLOOR_S4) ? s4 : 0;
+    currentAmperage = (smoothedCurrent < 0.03f) ? 0 : smoothedCurrent;
+    currentS1 = (socket1State && s1 >= 0.03f) ? s1 : 0;
+    currentS2 = (socket2State && s2 >= 0.03f) ? s2 : 0;
+    currentS3 = (socket3State && s3 >= 0.03f) ? s3 : 0;
+    currentS4 = (socket4State && s4 >= 0.03f) ? s4 : 0;
 
     // If no sockets are active, force total current to 0 (system self-draw is below threshold/ignored)
     bool anySocketActive = socket1State || socket2State || socket3State || socket4State;
