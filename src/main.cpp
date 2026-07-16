@@ -533,9 +533,11 @@ void loop() {
   if (nowMs - lastTopUpdate >= 2000) {
     lastTopUpdate = nowMs;
     
-    // True AC RMS Sampling: 3 consecutive 20ms cycles averaged to reduce spike sensitivity
+    // True AC RMS Sampling: 3 consecutive 20ms cycles
+    // Uses MIN across cycles as a consistency gate — real loads produce consistent signals;
+    // coupled AC noise from relay contacts is erratic and will fail the min check.
+    float cycA1[3], cycA2[3], cycA3[3], cycA4[3];
     float sumZRms = 0, sumARms = 0;
-    float sumA1Rms = 0, sumA2Rms = 0, sumA3Rms = 0, sumA4Rms = 0;
     const int NUM_CYCLES = 3;
 
     for (int cyc = 0; cyc < NUM_CYCLES; cyc++) {
@@ -545,7 +547,7 @@ void loop() {
       long a1Sum = 0, a2Sum = 0, a3Sum = 0, a4Sum = 0;
       int samples = 0;
       unsigned long startSample = millis();
-      while (millis() - startSample < 20) { // 20ms = 1 full cycle at 50Hz
+      while (millis() - startSample < 20) {
         long zRaw = analogRead(ZMPT101B_PIN);
         long aRaw = analogRead(ACS712_MAIN);
         long a1Raw = analogRead(ACS712_PIN1);
@@ -560,39 +562,50 @@ void loop() {
         a3SumSq += a3Raw * a3Raw;   a4SumSq += a4Raw * a4Raw;
         samples++;
       }
-      float zM = (float)zmptSum / samples;  float aM = (float)acsSum / samples;
-      float a1M = (float)a1Sum / samples;   float a2M = (float)a2Sum / samples;
-      float a3M = (float)a3Sum / samples;   float a4M = (float)a4Sum / samples;
+      float zM  = (float)zmptSum / samples;  float aM  = (float)acsSum / samples;
+      float a1M = (float)a1Sum   / samples;  float a2M = (float)a2Sum  / samples;
+      float a3M = (float)a3Sum   / samples;  float a4M = (float)a4Sum  / samples;
 
-      float zV  = ((float)zmptSumSq / samples) - (zM * zM);
-      float aV  = ((float)acsSumSq  / samples) - (aM * aM);
+      float zV  = ((float)zmptSumSq / samples) - (zM  * zM);
+      float aV  = ((float)acsSumSq  / samples) - (aM  * aM);
       float a1V = ((float)a1SumSq   / samples) - (a1M * a1M);
       float a2V = ((float)a2SumSq   / samples) - (a2M * a2M);
       float a3V = ((float)a3SumSq   / samples) - (a3M * a3M);
       float a4V = ((float)a4SumSq   / samples) - (a4M * a4M);
 
-      sumZRms  += zV  > 0 ? sqrt(zV)  : 0;
-      sumARms  += aV  > 0 ? sqrt(aV)  : 0;
-      sumA1Rms += a1V > 0 ? sqrt(a1V) : 0;
-      sumA2Rms += a2V > 0 ? sqrt(a2V) : 0;
-      sumA3Rms += a3V > 0 ? sqrt(a3V) : 0;
-      sumA4Rms += a4V > 0 ? sqrt(a4V) : 0;
+      sumZRms += zV > 0 ? sqrt(zV) : 0;
+      sumARms += aV > 0 ? sqrt(aV) : 0;
+      // Store individual cycle RMS for socket consistency check
+      cycA1[cyc] = a1V > 0 ? sqrt(a1V) : 0;
+      cycA2[cyc] = a2V > 0 ? sqrt(a2V) : 0;
+      cycA3[cyc] = a3V > 0 ? sqrt(a3V) : 0;
+      cycA4[cyc] = a4V > 0 ? sqrt(a4V) : 0;
     }
 
-    float zmptRms = sumZRms  / NUM_CYCLES;
-    float acsRms  = sumARms  / NUM_CYCLES;
-    float a1Rms   = sumA1Rms / NUM_CYCLES;
-    float a2Rms   = sumA2Rms / NUM_CYCLES;
-    float a3Rms   = sumA3Rms / NUM_CYCLES;
-    float a4Rms   = sumA4Rms / NUM_CYCLES;
+    // Main line: average across cycles
+    float zmptRms = sumZRms / NUM_CYCLES;
+    float acsRms  = sumARms / NUM_CYCLES;
+
+    // Socket lines: use MINIMUM across all 3 cycles (consistency gate)
+    // If even one cycle reads below noise, it's likely inductive/capacitive coupling, not a real load
+    float a1RmsMin = min(cycA1[0], min(cycA1[1], cycA1[2]));
+    float a2RmsMin = min(cycA2[0], min(cycA2[1], cycA2[2]));
+    float a3RmsMin = min(cycA3[0], min(cycA3[1], cycA3[2]));
+    float a4RmsMin = min(cycA4[0], min(cycA4[1], cycA4[2]));
+    // Average used for scaling (more accurate magnitude), but gated by min
+    float a1RmsAvg = (cycA1[0] + cycA1[1] + cycA1[2]) / NUM_CYCLES;
+    float a2RmsAvg = (cycA2[0] + cycA2[1] + cycA2[2]) / NUM_CYCLES;
+    float a3RmsAvg = (cycA3[0] + cycA3[1] + cycA3[2]) / NUM_CYCLES;
+    float a4RmsAvg = (cycA4[0] + cycA4[1] + cycA4[2]) / NUM_CYCLES;
     
     // Scale to real values
     float instVoltage = zmptRms * CAL_VOLTAGE;
     float instCurrent = acsRms  * CAL_CURRENT_MAIN;
-    float instC1 = a1Rms * CAL_CURRENT_S1;
-    float instC2 = a2Rms * CAL_CURRENT_S2;
-    float instC3 = a3Rms * CAL_CURRENT_S3;
-    float instC4 = a4Rms * CAL_CURRENT_S4;
+    // For sockets: only scale if min consistency gate passes the noise floor
+    float instC1 = (a1RmsMin * CAL_CURRENT_S1 >= 0.10f) ? (a1RmsAvg * CAL_CURRENT_S1) : 0.0f;
+    float instC2 = (a2RmsMin * CAL_CURRENT_S2 >= 0.10f) ? (a2RmsAvg * CAL_CURRENT_S2) : 0.0f;
+    float instC3 = (a3RmsMin * CAL_CURRENT_S3 >= 0.10f) ? (a3RmsAvg * CAL_CURRENT_S3) : 0.0f;
+    float instC4 = (a4RmsMin * CAL_CURRENT_S4 >= 0.10f) ? (a4RmsAvg * CAL_CURRENT_S4) : 0.0f;
     
     // EMA: 85% old value, 15% new — more resistant to single-cycle spikes
     static float smoothedVoltage = 0, smoothedCurrent = 0;
