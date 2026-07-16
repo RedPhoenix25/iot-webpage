@@ -107,10 +107,10 @@ const float CAL_CURRENT_S4 = 0.017;
 
 // Noise floor thresholds for each channel
 const float NOISE_FLOOR_MAIN = 0.08f;
-const float NOISE_FLOOR_S1   = 0.08f;
-const float NOISE_FLOOR_S2   = 0.08f;
-const float NOISE_FLOOR_S3   = 0.15f;
-const float NOISE_FLOOR_S4   = 0.15f;
+const float NOISE_FLOOR_S1   = 0.10f;
+const float NOISE_FLOOR_S2   = 0.10f;
+const float NOISE_FLOOR_S3   = 0.12f;
+const float NOISE_FLOOR_S4   = 0.12f;
 
 // Motion edge detection and bulb stay-on timer
 bool lastPhysicalPirState = false;
@@ -172,6 +172,10 @@ void runAutomation(float temp, bool motionDetected, bool ldrLight) {
     }
   } else {
     // If bulb is ON, we ignore the LDR to prevent feedback loop.
+    // If motion is detected, we keep resetting the stay-on timer!
+    if (motionDetected) {
+      bulbOnStartTime = millis();
+    }
     // We turn it OFF only when the timeout has expired.
     if (automatedBulbTrigger) {
       if (millis() - bulbOnStartTime > BULB_TIMEOUT_MS) {
@@ -320,7 +324,7 @@ void sendUpdate() {
   // LCD update has been moved to loop() to prevent flickering
 
   // Apply automations BEFORE sending the update
-  runAutomation(t, softwareMotionActive, ldrLight);
+  runAutomation(t, digitalRead(PIR_PIN) == HIGH, ldrLight);
 
   // Build JSON
   JsonDocument doc;
