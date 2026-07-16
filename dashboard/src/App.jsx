@@ -28,8 +28,8 @@ function App() {
   });
 
   const [outlets, setOutlets] = useState([
-    { id: 'socket1', name: 'Socket 1', state: false, power: 0, current: 0 },
-    { id: 'socket2', name: 'Socket 2', state: false, power: 0, current: 0 },
+    { id: 'socket1', name: 'Socket 1 (Bulb)', state: false, power: 0, current: 0 },
+    { id: 'socket2', name: 'Socket 2 (Fan)', state: false, power: 0, current: 0 },
     { id: 'socket3', name: 'Socket 3', state: false, power: 0, current: 0 },
     { id: 'socket4', name: 'Socket 4', state: false, power: 0, current: 0 }
   ]);
@@ -84,10 +84,13 @@ function App() {
     }
   };
 
+  const anySocketOn = outlets.some(o => o.state);
   const outletsTotalPower = outlets.reduce((sum, o) => sum + o.power, 0);
-  const trueTotalPower = (envData.mainCurrent !== null && envData.voltage !== null) 
-    ? envData.mainCurrent * envData.voltage 
-    : outletsTotalPower;
+  const trueTotalPower = anySocketOn
+    ? outletsTotalPower
+    : ((envData.mainCurrent !== null && envData.voltage !== null) 
+        ? envData.mainCurrent * envData.voltage 
+        : 0);
 
   if (!isAuthenticated) {
     return (

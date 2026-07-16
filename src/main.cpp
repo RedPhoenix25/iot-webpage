@@ -264,10 +264,10 @@ void sendUpdate() {
   float mainVoltage = currentVoltage;
   float mainCurrent = currentAmperage;
   
-  float c1 = socket1State ? currentS1 : 0;
-  float c2 = socket2State ? currentS2 : 0;
-  float c3 = socket3State ? currentS3 : 0;
-  float c4 = socket4State ? currentS4 : 0;
+  float c1 = currentS1;
+  float c2 = currentS2;
+  float c3 = currentS3;
+  float c4 = currentS4;
   
   float power1 = c1 * mainVoltage;
   float power2 = c2 * mainVoltage;
@@ -622,13 +622,13 @@ void loop() {
     s3 = (s3 * 0.85f) + (instC3 * 0.15f);
     s4 = (s4 * 0.85f) + (instC4 * 0.15f);
     
-    // Apply noise floor thresholds
+    // Apply noise floor thresholds and ensure OFF sockets are strictly 0
     currentVoltage  = (smoothedVoltage < 10.0f) ? 0 : smoothedVoltage;
     currentAmperage = (smoothedCurrent < 0.10f) ? 0 : smoothedCurrent;
-    currentS1 = (s1 < 0.10f) ? 0 : s1;
-    currentS2 = (s2 < 0.10f) ? 0 : s2;
-    currentS3 = (s3 < 0.10f) ? 0 : s3;
-    currentS4 = (s4 < 0.10f) ? 0 : s4;
+    currentS1 = (socket1State && s1 >= 0.10f) ? s1 : 0;
+    currentS2 = (socket2State && s2 >= 0.10f) ? s2 : 0;
+    currentS3 = (socket3State && s3 >= 0.10f) ? s3 : 0;
+    currentS4 = (socket4State && s4 >= 0.10f) ? s4 : 0;
 
     // Total power: use sum of socket readings (more reliable at low loads).
     // Fall back to main line measurement only when at least one socket is on and reporting.
