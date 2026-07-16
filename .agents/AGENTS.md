@@ -30,6 +30,7 @@ This section documents all agreed system behaviours for the IoT Energy Hub proje
 - Apply **Exponential Moving Average (EMA)** with **85% old / 15% new** weight to smooth stable readings without masking sudden load changes.
 - **Noise floor**: 0.10A for all current channels; 10V for voltage.
 - **Voltage calibration factor**: `CAL_VOLTAGE = 0.437` (tuned to match 219–222V multimeter reading).
+- **Expected voltage range**: Under normal grid conditions, the system voltage reading must fall between **219V and 222V**, matching the physical multimeter. Any reading consistently outside this range (without a real spike or drop on the grid) indicates the `CAL_VOLTAGE` factor needs re-tuning. The voltage safety cutoff (180V / 240V) is separate and handles genuine faults.
 - **Current calibration factors**: separate constants `CAL_CURRENT_MAIN`, `CAL_CURRENT_S1`–`S4`, all starting at `0.017` but individually adjustable.
 - The **LCD top row** and the **dashboard Main Voltage card** must always read from the same global variables (`currentVoltage`, `currentAmperage`, `currentPower`) to stay in sync.
 
