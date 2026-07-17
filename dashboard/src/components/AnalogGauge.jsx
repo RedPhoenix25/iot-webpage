@@ -56,19 +56,19 @@ const AnalogGauge = ({ power, voltage, current, energy, max = 5000 }) => {
         <div className="power-stat-box" style={{ borderColor: 'rgba(0, 229, 255, 0.3)' }}>
           <div className="stat-label" style={{ color: 'var(--accent-color)' }}><Zap size={16} /> Live Energy</div>
           <div className="stat-value" style={{ color: 'var(--accent-color)' }}>
-            {energy !== null ? energy.toFixed(1) : '--'} <span className="stat-unit" style={{ color: 'var(--accent-color)', opacity: 0.8 }}>Wh</span>
+            {energy != null ? Number(energy).toFixed(1) : '--'} <span className="stat-unit" style={{ color: 'var(--accent-color)', opacity: 0.8 }}>Wh</span>
           </div>
         </div>
         <div className="power-stat-box">
           <div className="stat-label"><Activity size={16} /> Main Voltage</div>
           <div className="stat-value" style={{ color: 'var(--success-color)' }}>
-            {voltage !== null ? voltage.toFixed(1) : '--'} <span className="stat-unit">V</span>
+            {voltage != null ? Number(voltage).toFixed(1) : '--'} <span className="stat-unit">V</span>
           </div>
         </div>
         <div className="power-stat-box">
           <div className="stat-label"><Zap size={16} /> Total Current</div>
           <div className="stat-value" style={{ color: 'var(--warning-color)' }}>
-            {current !== null ? current.toFixed(2) : '--'} <span className="stat-unit">A</span>
+            {current != null ? Number(current).toFixed(2) : '--'} <span className="stat-unit">A</span>
           </div>
         </div>
       </div>
