@@ -115,3 +115,5 @@
 - **Firmware Update:** Implemented 'Snap-to-Zero' logic to prevent idle noise and EMA 'memory effect' from showing ghost power on empty sockets. Fine-tuned the current sensor noise baselines to properly isolate true loads.
 
 - **UI Updates:** Removed individual socket voltage, power, and current readings from the React dashboard device cards, keeping only the label and the toggle switch to streamline the UI. The top Live Wattage continues to accurately sum these underlying values.
+
+- **Bug Fix:** Fixed Total Current showing 0.00A when Live Wattage calculates from summed socket powers. Modified Load Shedding trigger to perfectly match the dashboard's visual .toFixed(3) rounding and added an instant MQTT publish to reflect the shutoff immediately.

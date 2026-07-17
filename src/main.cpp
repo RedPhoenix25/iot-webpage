@@ -810,9 +810,12 @@ void loop() {
     // Total power: use sum of socket readings (more reliable at low loads).
     // Fall back to main line measurement only when at least one socket is on and reporting.
     float socketPowerSum = (currentS1 + currentS2 + currentS3 + currentS4) * currentVoltage;
-    currentPower = (anySocketActive && socketPowerSum > 0.5f)
-                   ? socketPowerSum
-                   : (currentAmperage * currentVoltage);
+    if (anySocketActive && socketPowerSum > 0.5f) {
+      currentPower = socketPowerSum;
+      currentAmperage = currentS1 + currentS2 + currentS3 + currentS4;
+    } else {
+      currentPower = currentAmperage * currentVoltage;
+    }
     
     float p1 = currentS1 * currentVoltage;
     float p2 = currentS2 * currentVoltage;
@@ -824,11 +827,13 @@ void loop() {
   
     // Load Shedding Logic
     if (dailyEnergyLimitKwh > 0.0 && !hasShedLoadsToday) {
-      if ((dailyEnergyTotal / 1000.0) >= dailyEnergyLimitKwh) {
+      // Add 0.0005 to match the dashboard's .toFixed(3) visual rounding
+      if (((dailyEnergyTotal / 1000.0f) + 0.0005f) >= dailyEnergyLimitKwh) {
         if (socket3State || socket4State) {
           socket3State = false;
           socket4State = false;
           updateRelays();
+          sendUpdate(); // Instantly update the dashboard
           Serial.println("SHEDDING LOADS: Daily Energy Limit Exceeded!");
         }
         hasShedLoadsToday = true;
