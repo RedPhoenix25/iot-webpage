@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "secrets.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -112,10 +113,8 @@ const float NOISE_RMS_S2   = 4.5f;
 const float NOISE_RMS_S3   = 6.0f;
 const float NOISE_RMS_S4   = 6.0f;
 
-// Motion edge detection and bulb stay-on timer
-bool lastPhysicalPirState = false;
-bool softwareMotionActive = false;
-unsigned long softwareMotionStartTime = 0;
+// Motion detection latch and bulb stay-on timer
+bool motionLatch = false;          // Set in loop() on any PIR HIGH, consumed by sendUpdate()
 unsigned long bulbOnStartTime = 0;
 bool automatedBulbTrigger = false;
 const unsigned long BULB_TIMEOUT_MS = 15000; // Bulb stays on for 15s
@@ -228,15 +227,32 @@ void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, 
 }
 
 void logEnergyToFirebase() {
-  if (WiFi.status() != WL_CONNECTED || !rtcFound) return;
+  if (WiFi.status() != WL_CONNECTED) return;
 
-  DateTime now = useDS1307 ? rtc1307.now() : rtc3231.now();
-  int year = now.year();
-  int month = now.month();
-  int day = now.day();
-  int hour = now.hour();
+  int year, month, day, hour;
 
-  String url = String(firebase_url) + "/energy_logs/" + String(year) + "/" + String(month) + "/" + String(day) + "/" + String(hour) + ".json";
+  // Prefer SNTP (network time) — most accurate. Fall back to RTC.
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 100) && timeinfo.tm_year > 120) {
+    year  = timeinfo.tm_year + 1900;
+    month = timeinfo.tm_mon + 1;
+    day   = timeinfo.tm_mday;
+    hour  = timeinfo.tm_hour;
+    Serial.printf("Firebase log using SNTP time: %d/%d/%d %02d:00\n", year, month, day, hour);
+  } else if (rtcFound) {
+    DateTime now = useDS1307 ? rtc1307.now() : rtc3231.now();
+    year  = now.year();
+    month = now.month();
+    day   = now.day();
+    hour  = now.hour();
+    Serial.printf("Firebase log using RTC time: %d/%d/%d %02d:00\n", year, month, day, hour);
+  } else {
+    Serial.println("Firebase log SKIPPED: no time source available.");
+    return;
+  }
+
+  // Append auth token so Firebase accepts the write
+  String url = String(firebase_url) + "/energy_logs/" + String(year) + "/" + String(month) + "/" + String(day) + "/" + String(hour) + ".json?auth=" + FIREBASE_DATABASE_SECRET;
   
   HTTPClient http;
   http.begin(url);
@@ -323,8 +339,15 @@ void sendUpdate() {
 
   // LCD update has been moved to loop() to prevent flickering
 
+  // Consume the motion latch — captures any PIR HIGH since last sendUpdate()
+  bool motionDetected = motionLatch;
+  motionLatch = false;
+  Serial.printf("PIR latch: %s, PIR pin now: %s\n",
+                motionDetected ? "TRIGGERED" : "clear",
+                digitalRead(PIR_PIN) == HIGH ? "HIGH" : "LOW");
+
   // Apply automations BEFORE sending the update
-  runAutomation(t, digitalRead(PIR_PIN) == HIGH, ldrLight);
+  runAutomation(t, motionDetected, ldrLight);
 
   // Build JSON
   JsonDocument doc;
@@ -344,7 +367,7 @@ void sendUpdate() {
     env["humidity"] = h;
   }
   
-  env["motion"] = softwareMotionActive; 
+  env["motion"] = motionDetected;
   env["lightLevel"] = lightLevel; 
   
   env["voltage"] = mainVoltage;
@@ -461,16 +484,24 @@ void setup() {
   delay(100); // Give devices a moment to power up
 
   // Initialize RTC (Try DS3231 first, then DS1307)
+  // NOTE: We do NOT call rtc.adjust() here with compile-time F(__DATE__) anymore.
+  // That would overwrite a correct RTC time every reboot. We only adjust on lost power.
   if (rtc3231.begin()) {
     rtcFound = true;
     useDS1307 = false;
     Serial.println("Found DS3231 RTC");
-    rtc3231.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    if (rtc3231.lostPower()) {
+      Serial.println("DS3231 lost power — setting compile-time fallback.");
+      rtc3231.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
   } else if (rtc1307.begin()) {
     rtcFound = true;
     useDS1307 = true;
     Serial.println("Found DS1307 RTC");
-    rtc1307.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    if (!rtc1307.isrunning()) {
+      Serial.println("DS1307 not running — setting compile-time fallback.");
+      rtc1307.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
   } else {
     Serial.println("Couldn't find any RTC");
     rtcFound = false;
@@ -521,25 +552,9 @@ void setup() {
 void loop() {
   wm.process(); // Handle captive portal in background
   
-  // Software motion edge detection and auto-clear timer
-  int currentPirVal = digitalRead(PIR_PIN);
-  if (currentPirVal == HIGH && !lastPhysicalPirState) {
-    lastPhysicalPirState = true;
-    softwareMotionActive = true;
-    softwareMotionStartTime = millis();
-    // If bulb is ON, reset its stay-on timer
-    if (socket1State) {
-      bulbOnStartTime = millis();
-      Serial.println("Motion detected -> Bulb timer extended.");
-    }
-  } else if (currentPirVal == LOW) {
-    lastPhysicalPirState = false;
-  }
-
-  // Auto-clear motion status on dashboard after 3 seconds
-  if (softwareMotionActive && (millis() - softwareMotionStartTime > 3000)) {
-    softwareMotionActive = false;
-    Serial.println("Motion cleared on dashboard.");
+  // PIR motion latch: capture any HIGH reading between sendUpdate() calls
+  if (digitalRead(PIR_PIN) == HIGH) {
+    motionLatch = true;
   }
 
   if (WiFi.status() == WL_CONNECTED) {

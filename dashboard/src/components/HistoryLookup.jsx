@@ -18,6 +18,7 @@ const HistoryLookup = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [loadingCSV, setLoadingCSV] = useState(false);
+  const [csvProgress, setCsvProgress] = useState('');
   const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
 
   const showToast = (message, type = 'info') => {
@@ -50,74 +51,78 @@ const HistoryLookup = () => {
   const handleDownloadCSV = async () => {
     if (!startDate || !endDate) return;
     setLoadingCSV(true);
+    setCsvProgress('Preparing...');
     
-    try {
-      const logsRef = ref(db, 'energy_logs');
-      const snapshot = await get(logsRef);
-      if (!snapshot.exists()) {
-        showToast("No data available.", 'error');
-        setLoadingCSV(false);
-        return;
-      }
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    const flatLogs = [];
+
+    // Iterate month by month to avoid downloading the full DB at once
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (cursor <= end) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth() + 1;
+      setCsvProgress(`Fetching ${cursor.toLocaleString('default', { month: 'long' })} ${year}...`);
       
-      const rawData = snapshot.val();
-      const flatLogs = [];
-      
-      for (const year in rawData) {
-        for (const month in rawData[year]) {
-          for (const day in rawData[year][month]) {
-            for (const hour in rawData[year][month][day]) {
-              const entry = rawData[year][month][day][hour];
-              if (!entry) continue;
-              const logDate = new Date(year, month - 1, day, hour);
-              
-              const start = new Date(startDate);
-              const end = new Date(endDate);
-              end.setHours(23, 59, 59, 999);
-              
+      try {
+        const monthRef = ref(db, `energy_logs/${year}/${month}`);
+        const snap = await get(monthRef);
+        if (snap.exists()) {
+          const days = snap.val();
+          for (const day in days) {
+            for (const hour in days[day]) {
+              const entry = days[day][hour];
+              const logDate = new Date(year, month - 1, parseInt(day), parseInt(hour));
               if (logDate >= start && logDate <= end) {
                 flatLogs.push({
                   Date: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,
                   Time: `${String(hour).padStart(2,'0')}:00`,
-                  Total_Wh: entry.total_wh || entry.wh || 0,
-                  Socket1_Wh: entry.s1_wh || 0,
-                  Socket2_Wh: entry.s2_wh || 0,
-                  Socket3_Wh: entry.s3_wh || 0,
-                  LightBulb_Wh: entry.s4_wh || 0,
-                  Voltage_Avg: entry.v_avg || 0,
-                  Voltage_Min: entry.v_min || 0,
-                  Voltage_Max: entry.v_max || 0
+                  Total_Wh: (entry.total_wh || entry.wh || 0).toFixed(4),
+                  Socket1_Wh: (entry.s1_wh || 0).toFixed(4),
+                  Socket2_Wh: (entry.s2_wh || 0).toFixed(4),
+                  Socket3_Wh: (entry.s3_wh || 0).toFixed(4),
+                  LightBulb_Wh: (entry.s4_wh || 0).toFixed(4),
+                  Voltage_Avg_V: (entry.v_avg || 0).toFixed(2),
+                  Voltage_Min_V: (entry.v_min || 0).toFixed(2),
+                  Voltage_Max_V: (entry.v_max || 0).toFixed(2),
                 });
               }
             }
           }
         }
+      } catch (err) {
+        console.error(`Error fetching ${year}/${month}:`, err);
       }
-      
-      if (flatLogs.length === 0) {
-        showToast("No data found in this date range.", 'error');
-        setLoadingCSV(false);
-        return;
-      }
-      
-      const headers = Object.keys(flatLogs[0]).join(",");
-      const rows = flatLogs.map(log => Object.values(log).join(","));
-      const csvContent = [headers, ...rows].join("\n");
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `energy_statement_${startDate}_to_${endDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-    } catch (err) {
-      console.error(err);
-      showToast("Error generating CSV: " + err.message, 'error');
+
+      // Advance to next month
+      cursor.setMonth(cursor.getMonth() + 1);
     }
+    
+    if (flatLogs.length === 0) {
+      setCsvProgress('');
+      setLoadingCSV(false);
+      alert('No data found in this date range. The system may not have been logging during this period.');
+      return;
+    }
+
+    setCsvProgress(`Generating CSV (${flatLogs.length} records)...`);
+    
+    const headers = Object.keys(flatLogs[0]).join(',');
+    const rows = flatLogs
+      .sort((a, b) => `${a.Date}${a.Time}`.localeCompare(`${b.Date}${b.Time}`))
+      .map(log => Object.values(log).join(','));
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
+    
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `iot_energy_statement_${startDate}_to_${endDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setCsvProgress('');
     setLoadingCSV(false);
   };
 
@@ -225,8 +230,9 @@ const HistoryLookup = () => {
                   onClick={handleDownloadCSV} 
                   className="login-button" 
                   style={{ width: '100%', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '1.1rem' }}
+                  disabled={loadingCSV}
                 >
-                  <FileDown size={20} /> {loadingCSV ? 'Compiling Statement...' : 'Download CSV Statement'}
+                  <FileDown size={20} /> {loadingCSV ? (csvProgress || 'Starting...') : 'Download CSV Statement'}
                 </button>
               </div>
             )}

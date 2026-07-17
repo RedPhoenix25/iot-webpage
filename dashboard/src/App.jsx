@@ -7,6 +7,7 @@ import {
 
 import AnalogGauge from './components/AnalogGauge';
 import HistoricalGraph from './components/HistoricalGraph';
+import EnergyStats from './components/EnergyStats';
 
 function App() {
   const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
@@ -145,6 +146,9 @@ function App() {
         current={envData.mainCurrent} 
         max={5000} 
       />
+
+      {/* Live Energy Monitoring Stats Bar */}
+      <EnergyStats />
 
       {/* Environment 2x2 Grid */}
       <div className="grid-2col">
