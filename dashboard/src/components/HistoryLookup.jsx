@@ -106,11 +106,11 @@ const HistoryLookup = () => {
                 flatLogs.push({
                   Date: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,
                   Time: `${String(hour).padStart(2,'0')}:00`,
-                  Total_Wh: (entry.total_wh || entry.wh || 0).toFixed(4),
-                  Socket1_Wh: (entry.s1_wh || 0).toFixed(4),
-                  Socket2_Wh: (entry.s2_wh || 0).toFixed(4),
-                  Socket3_Wh: (entry.s3_wh || 0).toFixed(4),
-                  LightBulb_Wh: (entry.s4_wh || 0).toFixed(4),
+                  Total_kWh: ((entry.total_wh || entry.wh || 0) / 1000).toFixed(4),
+                  Socket1_kWh: ((entry.s1_wh || 0) / 1000).toFixed(4),
+                  Socket2_kWh: ((entry.s2_wh || 0) / 1000).toFixed(4),
+                  Socket3_kWh: ((entry.s3_wh || 0) / 1000).toFixed(4),
+                  LightBulb_kWh: ((entry.s4_wh || 0) / 1000).toFixed(4),
                   Voltage_Avg_V: (entry.v_avg || 0).toFixed(2),
                   Voltage_Min_V: (entry.v_min || 0).toFixed(2),
                   Voltage_Max_V: (entry.v_max || 0).toFixed(2),
@@ -207,23 +207,23 @@ const HistoryLookup = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                     <div style={{ background: 'rgba(0, 229, 255, 0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(0, 229, 255, 0.2)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}><Bolt size={14} style={{display:'inline'}}/> Total System</p>
-                      <h3 style={{ fontSize: '2rem', margin: 0, color: 'var(--accent-color)' }}>{result.total_wh || result.wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '2rem', margin: 0, color: 'var(--accent-color)' }}>{((result.total_wh || result.wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 1</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{result.s1_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((result.s1_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 2</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{result.s2_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((result.s2_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 3</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{result.s3_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((result.s3_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Light Bulb</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{result.s4_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((result.s4_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(16, 185, 129, 0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)', gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between' }}>
                       <div>
@@ -258,23 +258,23 @@ const HistoryLookup = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                     <div style={{ background: 'rgba(0, 229, 255, 0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(0, 229, 255, 0.2)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}><Bolt size={14} style={{display:'inline'}}/> Total System</p>
-                      <h3 style={{ fontSize: '2rem', margin: 0, color: 'var(--accent-color)' }}>{dailyResult.total_wh || dailyResult.wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '2rem', margin: 0, color: 'var(--accent-color)' }}>{((dailyResult.total_wh || dailyResult.wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 1</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s1_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((dailyResult.s1_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 2</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s2_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((dailyResult.s2_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 3</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s3_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((dailyResult.s3_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Light Bulb</p>
-                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s4_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{((dailyResult.s4_wh || 0) / 1000).toFixed(3)} <span style={{fontSize:'1rem'}}>kWh</span></h3>
                     </div>
                     <div style={{ background: 'rgba(16, 185, 129, 0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)', gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between' }}>
                       <div>

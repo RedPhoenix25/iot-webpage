@@ -56,7 +56,7 @@ const AnalogGauge = ({ power, voltage, current, energy, max = 5000 }) => {
         <div className="power-stat-box" style={{ borderColor: 'rgba(0, 229, 255, 0.3)' }}>
           <div className="stat-label" style={{ color: 'var(--accent-color)' }}><Zap size={16} /> Live Energy</div>
           <div className="stat-value" style={{ color: 'var(--accent-color)' }}>
-            {energy != null ? Number(energy).toFixed(1) : '--'} <span className="stat-unit" style={{ color: 'var(--accent-color)', opacity: 0.8 }}>Wh</span>
+            {energy != null ? (Number(energy) / 1000).toFixed(3) : '--'} <span className="stat-unit" style={{ color: 'var(--accent-color)', opacity: 0.8 }}>kWh</span>
           </div>
         </div>
         <div className="power-stat-box">

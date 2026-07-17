@@ -38,7 +38,7 @@ const HistoricalGraph = () => {
             if (!entry) continue;
             flatLogs.push({
               date: new Date(year, month - 1, day, hour),
-              wh: entry.total_wh || entry.wh || 0
+              kwh: (entry.total_wh || entry.wh || 0) / 1000
             });
           }
         }
@@ -54,8 +54,8 @@ const HistoricalGraph = () => {
       
       for (let i = 0; i < 24; i++) {
         const hourLogs = todayLogs.filter(l => l.date.getHours() === i);
-        const totalWh = hourLogs.reduce((sum, l) => sum + l.wh, 0);
-        result.push({ name: `${i}:00`, wh: totalWh });
+        const totalKwh = hourLogs.reduce((sum, l) => sum + l.kwh, 0);
+        result.push({ name: `${i}:00`, kwh: totalKwh });
       }
     } 
     else if (range === 'daily') {
@@ -67,8 +67,8 @@ const HistoricalGraph = () => {
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       for (let i = 1; i <= daysInMonth; i++) {
         const dayLogs = monthLogs.filter(l => l.date.getDate() === i);
-        const totalWh = dayLogs.reduce((sum, l) => sum + l.wh, 0);
-        result.push({ name: `Day ${i}`, wh: totalWh });
+        const totalKwh = dayLogs.reduce((sum, l) => sum + l.kwh, 0);
+        result.push({ name: `Day ${i}`, kwh: totalKwh });
       }
     }
     else if (range === 'weekly') {
@@ -77,8 +77,8 @@ const HistoricalGraph = () => {
         const start = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
         const end = new Date(now.getTime() - (i-1) * 7 * 24 * 60 * 60 * 1000);
         const weekLogs = flatLogs.filter(l => l.date >= start && l.date < end);
-        const totalWh = weekLogs.reduce((sum, l) => sum + l.wh, 0);
-        result.push({ name: `Week -${i}`, wh: totalWh });
+        const totalKwh = weekLogs.reduce((sum, l) => sum + l.kwh, 0);
+        result.push({ name: `Week -${i}`, kwh: totalKwh });
       }
     }
     else if (range === 'monthly') {
@@ -87,8 +87,8 @@ const HistoricalGraph = () => {
       
       for (let i = 0; i < 12; i++) {
         const mLogs = yearLogs.filter(l => l.date.getMonth() === i);
-        const totalWh = mLogs.reduce((sum, l) => sum + l.wh, 0);
-        result.push({ name: months[i], wh: totalWh });
+        const totalKwh = mLogs.reduce((sum, l) => sum + l.kwh, 0);
+        result.push({ name: months[i], kwh: totalKwh });
       }
     }
 
@@ -98,7 +98,7 @@ const HistoricalGraph = () => {
   return (
     <div className="glass-panel" style={{ marginTop: '2rem', gridColumn: '1 / -1' }}>
       <div className="graph-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '10px' }}>
-        <h3>Energy Consumption (Wh)</h3>
+        <h3>Energy Consumption (kWh)</h3>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {['hourly', 'daily', 'weekly', 'monthly'].map(range => (
             <button 
@@ -133,7 +133,7 @@ const HistoricalGraph = () => {
               contentStyle={{ background: '#090E17', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white' }}
               itemStyle={{ color: 'var(--accent-color)' }}
             />
-            <Area type="monotone" dataKey="wh" stroke="var(--accent-color)" strokeWidth={3} fillOpacity={1} fill="url(#colorWh)" />
+            <Area type="monotone" dataKey="kwh" stroke="var(--accent-color)" strokeWidth={3} fillOpacity={1} fill="url(#colorWh)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
