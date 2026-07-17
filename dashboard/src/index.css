@@ -44,6 +44,15 @@ body {
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
 }
 
+/* Solid Panels for Popups */
+.solid-panel {
+  background: #141923;
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+}
+
 .glass-panel:active {
   transform: scale(0.98);
 }

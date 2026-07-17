@@ -162,7 +162,7 @@ const EnergyStats = ({ publishCommand }) => {
       {/* Rate Editor Modal */}
       {showRateEditor && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div className="glass-panel" style={{ padding: '2rem', maxWidth: '360px', width: '100%', position: 'relative' }}>
+          <div className="solid-panel" style={{ padding: '2rem', maxWidth: '360px', width: '100%', position: 'relative' }}>
             <button onClick={() => setShowRateEditor(false)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
               <X size={20} />
             </button>
