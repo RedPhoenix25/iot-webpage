@@ -208,10 +208,6 @@ function App() {
                 </div>
                 <div>
                   <div className="device-name">{outlet.name}</div>
-                  <div className="device-stats">
-                    <span><Zap size={12}/> <span className="stat-highlight">{outlet.power.toFixed(1)}</span> W</span>
-                    <span><Activity size={12}/> <span className="stat-highlight">{outlet.current.toFixed(2)}</span> A</span>
-                  </div>
                 </div>
               </div>
               <label className="toggle-switch">

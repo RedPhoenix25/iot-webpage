@@ -120,8 +120,8 @@ const float CAL_CURRENT_S4 = 0.017f;
 
 // Raw RMS noise offsets (in ADC counts) when relays are ON
 const float NOISE_RMS_MAIN = 4.0f;
-const float NOISE_RMS_S1   = 4.5f;
-const float NOISE_RMS_S2   = 4.5f;
+const float NOISE_RMS_S1   = 5.5f;
+const float NOISE_RMS_S2   = 5.5f;
 const float NOISE_RMS_S3   = 6.0f;
 const float NOISE_RMS_S4   = 6.0f;
 
@@ -770,11 +770,11 @@ void loop() {
     }
     // Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
     float instCurrent = (acsMinClean * CAL_CURRENT_MAIN >= 0.03f) ? (acsRmsClean * CAL_CURRENT_MAIN) : 0.0f;
-    // Socket sensors: same consistency gate
-    float instC1 = (a1MinClean * CAL_CURRENT_S1 >= 0.03f) ? (a1RmsClean * CAL_CURRENT_S1) : 0.0f;
-    float instC2 = (a2MinClean * CAL_CURRENT_S2 >= 0.03f) ? (a2RmsClean * CAL_CURRENT_S2) : 0.0f;
-    float instC3 = (a3MinClean * CAL_CURRENT_S3 >= 0.03f) ? (a3RmsClean * CAL_CURRENT_S3) : 0.0f;
-    float instC4 = (a4MinClean * CAL_CURRENT_S4 >= 0.03f) ? (a4RmsClean * CAL_CURRENT_S4) : 0.0f;
+    // Socket sensors: use average clean RMS to avoid dips rejecting real loads
+    float instC1 = (a1RmsClean * CAL_CURRENT_S1 >= 0.04f) ? (a1RmsClean * CAL_CURRENT_S1) : 0.0f;
+    float instC2 = (a2RmsClean * CAL_CURRENT_S2 >= 0.04f) ? (a2RmsClean * CAL_CURRENT_S2) : 0.0f;
+    float instC3 = (a3RmsClean * CAL_CURRENT_S3 >= 0.04f) ? (a3RmsClean * CAL_CURRENT_S3) : 0.0f;
+    float instC4 = (a4RmsClean * CAL_CURRENT_S4 >= 0.04f) ? (a4RmsClean * CAL_CURRENT_S4) : 0.0f;
     
     // EMA: 85% old value, 15% new — more resistant to single-cycle spikes
     static float smoothedVoltage = 0, smoothedCurrent = 0;
@@ -787,11 +787,11 @@ void loop() {
     }
     
     smoothedVoltage = (smoothedVoltage * 0.85f) + (instVoltage * 0.15f);
-    smoothedCurrent = (smoothedCurrent * 0.85f) + (instCurrent * 0.15f);
-    s1 = (s1 * 0.85f) + (instC1 * 0.15f);
-    s2 = (s2 * 0.85f) + (instC2 * 0.15f);
-    s3 = (s3 * 0.85f) + (instC3 * 0.15f);
-    s4 = (s4 * 0.85f) + (instC4 * 0.15f);
+    smoothedCurrent = (instCurrent == 0.0f) ? 0.0f : (smoothedCurrent * 0.85f) + (instCurrent * 0.15f);
+    s1 = (instC1 == 0.0f) ? 0.0f : (s1 * 0.85f) + (instC1 * 0.15f);
+    s2 = (instC2 == 0.0f) ? 0.0f : (s2 * 0.85f) + (instC2 * 0.15f);
+    s3 = (instC3 == 0.0f) ? 0.0f : (s3 * 0.85f) + (instC3 * 0.15f);
+    s4 = (instC4 == 0.0f) ? 0.0f : (s4 * 0.85f) + (instC4 * 0.15f);
     
     // Apply noise floor thresholds and ensure OFF sockets are strictly 0
     currentVoltage  = (smoothedVoltage < 10.0f) ? 0 : smoothedVoltage;

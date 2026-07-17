@@ -111,3 +111,7 @@
 
 - **UI Updates**: Added 'Daily Energy Limit' to Settings modal in EnergyStats.jsx. Syncs value to Firebase and MQTT command.
 - **Backend Changes**: Modified LDR automation rule in main.cpp to ignore motion and use strict 15s delay. Added Load Shedding limit logic to drop Sockets 3 & 4 automatically but track state to allow manual override.
+
+- **Firmware Update:** Implemented 'Snap-to-Zero' logic to prevent idle noise and EMA 'memory effect' from showing ghost power on empty sockets. Fine-tuned the current sensor noise baselines to properly isolate true loads.
+
+- **UI Updates:** Removed individual socket voltage, power, and current readings from the React dashboard device cards, keeping only the label and the toggle switch to streamline the UI. The top Live Wattage continues to accurately sum these underlying values.
