@@ -102,3 +102,4 @@
 ## UI Bug Fixes
 - **Number Input Styling**: Fixed an issue where the Electricity Rate placeholder (`225`) wasn't inheriting the correct font size and weight by explicitly adding `::placeholder` styling to `.history-input`. Also removed the default WebKit spin buttons (up/down arrows) from number inputs to prevent them from creating an awkward dark box inside the input field and breaking the layout.
 - **Bleeding Input Fix**: Added `minWidth: 0` and `width: '100%'` inline styles to the electricity rate input inside its flex container in `EnergyStats.jsx` to prevent it from bleeding out of the modal boundaries.
+- **Cross-Device Rate Sync**: Replaced `localStorage` with Firebase Realtime Database (`settings/electricity_rate`) for the electricity tariff. The component now uses `onValue()` to subscribe to real-time updates — any device that changes the rate instantly propagates it to all other open sessions with no page refresh needed.

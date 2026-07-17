@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { ref, get } from 'firebase/database';
+import { ref, get, set, onValue } from 'firebase/database';
 import { db } from '../firebase';
 import { Zap, Calendar, TrendingUp, Settings, X, Check } from 'lucide-react';
 
-const RATE_KEY = 'iot_electricity_rate';
+const RATE_DB_PATH = 'settings/electricity_rate';
+const DEFAULT_RATE = 225;
 
 const EnergyStats = () => {
   const [todayWh, setTodayWh] = useState(null);
   const [monthKwh, setMonthKwh] = useState(null);
-  const [rate, setRate] = useState(() => {
-    const saved = localStorage.getItem(RATE_KEY);
-    return saved ? parseFloat(saved) : 225;
-  });
+  const [rate, setRate] = useState(DEFAULT_RATE);
   const [showRateEditor, setShowRateEditor] = useState(false);
-  const [rateInput, setRateInput] = useState(rate.toString());
+  const [rateInput, setRateInput] = useState(DEFAULT_RATE.toString());
+  const [saving, setSaving] = useState(false);
 
   const fetchEnergyData = async () => {
     const now = new Date();
@@ -58,6 +57,21 @@ const EnergyStats = () => {
     }
   };
 
+  // Real-time listener for the electricity rate from Firebase
+  useEffect(() => {
+    const rateRef = ref(db, RATE_DB_PATH);
+    const unsubscribe = onValue(rateRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (typeof val === 'number' && val > 0) {
+          setRate(val);
+          setRateInput(val.toString());
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     fetchEnergyData();
     // Refresh every 2 minutes
@@ -65,11 +79,18 @@ const EnergyStats = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSaveRate = () => {
+  const handleSaveRate = async () => {
     const parsed = parseFloat(rateInput);
     if (!isNaN(parsed) && parsed > 0) {
-      setRate(parsed);
-      localStorage.setItem(RATE_KEY, parsed.toString());
+      setSaving(true);
+      try {
+        // Write to Firebase — the onValue listener will update all devices instantly
+        await set(ref(db, RATE_DB_PATH), parsed);
+      } catch (err) {
+        console.error('Failed to save rate:', err);
+      } finally {
+        setSaving(false);
+      }
     }
     setShowRateEditor(false);
   };
@@ -169,9 +190,10 @@ const EnergyStats = () => {
             <button
               onClick={handleSaveRate}
               className="login-button"
+              disabled={saving}
               style={{ width: '100%', padding: '14px', marginTop: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              <Check size={18} /> Save Rate
+              <Check size={18} /> {saving ? 'Saving...' : 'Save Rate'}
             </button>
           </div>
         </div>
