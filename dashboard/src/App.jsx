@@ -76,7 +76,8 @@ function App() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (passwordInput === import.meta.env.VITE_APP_PASSWORD) {
+    const masterPassword = import.meta.env.VITE_APP_PASSWORD || 'iothub26';
+    if (passwordInput.trim() === masterPassword) {
       setIsAuthenticated(true);
       setLoginError(false);
     } else {
