@@ -139,6 +139,10 @@ unsigned long lastEnergyCalc = 0;
 unsigned long lastUpdate = 0;
 unsigned long lastFirebaseLog = 0;
 
+Preferences prefs;
+float dailyEnergyLimitKwh = 0.0;
+bool hasShedLoadsToday = false;
+
 void updateRelays() {
   if (voltageFault) {
     digitalWrite(26, HIGH);
@@ -171,29 +175,23 @@ void runAutomation(float temp, bool motionDetected, bool ldrLight) {
     }
   }
 
-  // --- Rule 2: Motion + LDR Smart Bulb (Socket 1) ---
-  // If bulb is OFF, it can turn ON if it is dark and motion is detected
-  if (!socket1State) {
-    if (!ldrLight && motionDetected) {
+  // --- Rule 2: LDR Smart Bulb (Socket 1) ---
+  if (!ldrLight) { // Dark (covered)
+    if (!socket1State) {
       socket1State = true;
-      automatedBulbTrigger = true;
-      bulbOnStartTime = millis();
+      Serial.println("Rule: LDR Covered (Dark) -> Socket 1 (Bulb) ON.");
       updateRelays();
-      Serial.println("Rule: Motion + Dark -> Socket 1 (Bulb) ON.");
     }
-  } else {
-    // If bulb is ON, we ignore the LDR to prevent feedback loop.
-    // If motion is detected, we keep resetting the stay-on timer!
-    if (motionDetected) {
-      bulbOnStartTime = millis();
-    }
-    // We turn it OFF only when the timeout has expired.
-    if (automatedBulbTrigger) {
+    bulbOnStartTime = millis(); // Constantly reset timer while covered
+    automatedBulbTrigger = true;
+  } else { // Light (uncovered)
+    // If it was triggered automatically, wait 15 seconds to turn off
+    if (automatedBulbTrigger && socket1State) {
       if (millis() - bulbOnStartTime > BULB_TIMEOUT_MS) {
         socket1State = false;
         automatedBulbTrigger = false;
+        Serial.println("Rule: LDR Uncovered for 15s -> Socket 1 (Bulb) OFF.");
         updateRelays();
-        Serial.println("Rule: Bulb stay-on timeout expired -> Socket 1 (Bulb) OFF.");
       }
     }
   }
@@ -234,6 +232,7 @@ void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, 
     dailyVoltageCount = 0;
     dailyVoltageMin = 999.0;
     dailyVoltageMax = 0.0;
+    hasShedLoadsToday = false; // Reset the manual override protection flag
     currentDay = thisDay;
   }
 
@@ -517,6 +516,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     updateRelays();
     sendUpdate();
   }
+  else if (command && strcmp(command, "set_limit") == 0) {
+    if (doc.containsKey("value")) {
+      dailyEnergyLimitKwh = doc["value"].as<float>();
+      prefs.putFloat("limit", dailyEnergyLimitKwh);
+      Serial.printf("Daily Energy Limit set to: %.2f kWh\n", dailyEnergyLimitKwh);
+    }
+  }
 }
 
 void reconnectMQTT() {
@@ -540,6 +546,11 @@ void reconnectMQTT() {
 void setup() {
   Serial.begin(115200);
   
+  // Load Preferences
+  prefs.begin("iothub", false);
+  dailyEnergyLimitKwh = prefs.getFloat("limit", 0.0);
+  Serial.printf("Loaded Daily Energy Limit: %.2f kWh\n", dailyEnergyLimitKwh);
+
   // Setup Pins
   pinMode(RELAY_SOCKET_1, OUTPUT);
   pinMode(RELAY_SOCKET_2, OUTPUT);
@@ -811,6 +822,19 @@ void loop() {
     // Track Energy
     calculateEnergy(currentPower, p1, p2, p3, p4, currentVoltage);
   
+    // Load Shedding Logic
+    if (dailyEnergyLimitKwh > 0.0 && !hasShedLoadsToday) {
+      if ((dailyEnergyTotal / 1000.0) >= dailyEnergyLimitKwh) {
+        if (socket3State || socket4State) {
+          socket3State = false;
+          socket4State = false;
+          updateRelays();
+          Serial.println("SHEDDING LOADS: Daily Energy Limit Exceeded!");
+        }
+        hasShedLoadsToday = true;
+      }
+    }
+
     // LCD Top Row — uses currentVoltage globals to stay in sync with dashboard
     char topStr[17];
     snprintf(topStr, sizeof(topStr), "%-3.0fV %-3.1fA %-4.0fW",

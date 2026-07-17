@@ -4,13 +4,16 @@ import { db } from '../firebase';
 import { Zap, Calendar, TrendingUp, Settings, X, Check } from 'lucide-react';
 
 const RATE_DB_PATH = 'settings/electricity_rate';
+const LIMIT_DB_PATH = 'settings/daily_energy_limit';
 const DEFAULT_RATE = 225;
 
-const EnergyStats = () => {
+const EnergyStats = ({ publishCommand }) => {
   const [monthKwh, setMonthKwh] = useState(null);
   const [rate, setRate] = useState(DEFAULT_RATE);
+  const [limit, setLimit] = useState(0);
   const [showRateEditor, setShowRateEditor] = useState(false);
   const [rateInput, setRateInput] = useState(DEFAULT_RATE.toString());
+  const [limitInput, setLimitInput] = useState('0');
   const [saving, setSaving] = useState(false);
 
   const fetchEnergyData = async () => {
@@ -55,7 +58,23 @@ const EnergyStats = () => {
         }
       }
     });
-    return () => unsubscribe();
+    });
+
+    const limitRef = ref(db, LIMIT_DB_PATH);
+    const limitUnsubscribe = onValue(limitRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (typeof val === 'number') {
+          setLimit(val);
+          setLimitInput(val.toString());
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      limitUnsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -65,15 +84,21 @@ const EnergyStats = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSaveRate = async () => {
-    const parsed = parseFloat(rateInput);
-    if (!isNaN(parsed) && parsed > 0) {
+  const handleSaveSettings = async () => {
+    const parsedRate = parseFloat(rateInput);
+    const parsedLimit = parseFloat(limitInput) || 0;
+    
+    if (!isNaN(parsedRate) && parsedRate > 0) {
       setSaving(true);
       try {
-        // Write to Firebase — the onValue listener will update all devices instantly
-        await set(ref(db, RATE_DB_PATH), parsed);
+        await set(ref(db, RATE_DB_PATH), parsedRate);
+        await set(ref(db, LIMIT_DB_PATH), parsedLimit);
+        
+        if (publishCommand) {
+          publishCommand({ action: 'set_limit', value: parsedLimit });
+        }
       } catch (err) {
-        console.error('Failed to save rate:', err);
+        console.error('Failed to save settings:', err);
       } finally {
         setSaving(false);
       }
@@ -121,7 +146,11 @@ const EnergyStats = () => {
           </p>
         </div>
         <button
-          onClick={() => { setRateInput(rate.toString()); setShowRateEditor(true); }}
+          onClick={() => { 
+            setRateInput(rate.toString()); 
+            setLimitInput(limit.toString());
+            setShowRateEditor(true); 
+          }}
           title="Set electricity rate"
           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'color 0.2s' }}
           onMouseOver={e => e.currentTarget.style.color = 'var(--accent-color)'}
@@ -138,11 +167,15 @@ const EnergyStats = () => {
             <button onClick={() => setShowRateEditor(false)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
               <X size={20} />
             </button>
-            <h3 style={{ marginBottom: '0.5rem' }}>Electricity Rate</h3>
+            <h3 style={{ marginBottom: '0.5rem' }}>System Settings</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              Configure your tariff and auto-shedding limits.
+            </p>
+            <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Electricity Rate</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
               Set your tariff in Naira (₦) per kilowatt-hour (kWh). Used to estimate monthly cost.
             </p>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '1.5rem' }}>
               <span style={{ fontSize: '1.5rem', color: 'var(--text-muted)' }}>₦</span>
               <input
                 type="number"
@@ -156,13 +189,32 @@ const EnergyStats = () => {
               />
               <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>per kWh</span>
             </div>
+
+            <h3 style={{ marginBottom: '0.5rem' }}>Daily Energy Limit</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              Set a maximum daily budget in kWh. The system will shed non-essential loads if exceeded. Set to 0 to disable.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="number"
+                className="history-input"
+                value={limitInput}
+                onChange={e => setLimitInput(e.target.value)}
+                placeholder="0"
+                min="0"
+                step="0.1"
+                style={{ flex: 1, fontSize: '1.4rem', fontWeight: '700', minWidth: 0, width: '100%' }}
+              />
+              <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>kWh / day</span>
+            </div>
+
             <button
-              onClick={handleSaveRate}
+              onClick={handleSaveSettings}
               className="login-button"
               disabled={saving}
               style={{ width: '100%', padding: '14px', marginTop: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              <Check size={18} /> {saving ? 'Saving...' : 'Save Rate'}
+              <Check size={18} /> {saving ? 'Saving...' : 'Save Settings'}
             </button>
           </div>
         </div>

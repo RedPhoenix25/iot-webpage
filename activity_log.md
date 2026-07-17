@@ -108,3 +108,6 @@
 - **Daily Aggregate Storage**: Configured the ESP32 to maintain daily power consumption totals that automatically reset at midnight. These totals are patched to Firebase every minute under `energy_logs/YYYY/MM/DD/daily_summary.json` allowing for easy single-query access to full-day consumption records.
 - **Live Energy Card**: Subscribed the dashboard's React state to the newly broadcasted `dailyEnergy` field over MQTT. Replaced the static "Today's Usage" widget with a prominent, visually impressive "Live Energy" card located in the Hero Section next to the Live Wattage gauge. The metric visibly increments in real-time.
 - **Specific Day Lookup**: Enhanced the Advanced Analytics `HistoryLookup.jsx` modal by adding a "Specific Day Lookup" tab. Users can now input a single date and receive the total power consumption for the entire day, separated by socket, directly from the newly established `daily_summary` endpoints.
+
+- **UI Updates**: Added 'Daily Energy Limit' to Settings modal in EnergyStats.jsx. Syncs value to Firebase and MQTT command.
+- **Backend Changes**: Modified LDR automation rule in main.cpp to ignore motion and use strict 15s delay. Added Load Shedding limit logic to drop Sockets 3 & 4 automatically but track state to allow manual override.

@@ -75,6 +75,12 @@ function App() {
     }
   };
 
+  const publishCommand = (payload) => {
+    if (socket && brokerConnected) {
+      socket.publish(MQTT_TOPIC_CMD, JSON.stringify(payload));
+    }
+  };
+
   const handleLogin = (e) => {
     e.preventDefault();
     const masterPassword = import.meta.env.VITE_APP_PASSWORD || 'iothub26';
@@ -151,7 +157,7 @@ function App() {
       />
 
       {/* Live Energy Monitoring Stats Bar */}
-      <EnergyStats />
+      <EnergyStats publishCommand={publishCommand} />
 
       {/* Environment 2x2 Grid */}
       <div className="grid-2col">
