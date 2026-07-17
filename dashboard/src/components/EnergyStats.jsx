@@ -161,7 +161,7 @@ const EnergyStats = () => {
                 onChange={e => setRateInput(e.target.value)}
                 placeholder="225"
                 min="1"
-                style={{ flex: 1, fontSize: '1.4rem', fontWeight: '700' }}
+                style={{ flex: 1, fontSize: '1.4rem', fontWeight: '700', minWidth: 0, width: '100%' }}
                 autoFocus
               />
               <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>per kWh</span>
