@@ -58,7 +58,6 @@ const EnergyStats = ({ publishCommand }) => {
         }
       }
     });
-    });
 
     const limitRef = ref(db, LIMIT_DB_PATH);
     const limitUnsubscribe = onValue(limitRef, (snapshot) => {
