@@ -98,3 +98,6 @@
 
 ## Dashboard Authentication Bug Fix
 - **Fallback Password & Input Trimming**: Added a code-level fallback to `'iothub26'` when `import.meta.env.VITE_APP_PASSWORD` is undefined (such as on Vercel deployment builds where `.env` is excluded). Also added `.trim()` to the user password input to prevent spacing issues caused by auto-correct or keyboard suggestions.
+
+## UI Bug Fixes
+- **Number Input Styling**: Fixed an issue where the Electricity Rate placeholder (`225`) wasn't inheriting the correct font size and weight by explicitly adding `::placeholder` styling to `.history-input`. Also removed the default WebKit spin buttons (up/down arrows) from number inputs to prevent them from creating an awkward dark box inside the input field and breaking the layout.

@@ -455,6 +455,22 @@ input:checked + .slider:before {
   cursor: pointer;
 }
 
+.history-input::placeholder {
+  font-size: inherit;
+  font-weight: inherit;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.history-input[type="number"]::-webkit-inner-spin-button,
+.history-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.history-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 .history-input:focus, .history-select:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 10px var(--accent-glow);
