@@ -25,7 +25,8 @@ function App() {
   
   const [envData, setEnvData] = useState({
     temperature: null, humidity: null, motion: null,
-    lightLevel: null, voltage: null, mainCurrent: null
+    lightLevel: null, voltage: null, mainCurrent: null,
+    dailyEnergy: null
   });
 
   const [outlets, setOutlets] = useState([
@@ -145,6 +146,7 @@ function App() {
         power={trueTotalPower} 
         voltage={envData.voltage} 
         current={envData.mainCurrent} 
+        energy={envData.dailyEnergy}
         max={5000} 
       />
 

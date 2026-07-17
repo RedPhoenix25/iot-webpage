@@ -79,13 +79,25 @@ double hourlyEnergyS2 = 0.0;
 double hourlyEnergyS3 = 0.0;
 double hourlyEnergyS4 = 0.0;
 
+double dailyEnergyTotal = 0.0;
+double dailyEnergyS1 = 0.0;
+double dailyEnergyS2 = 0.0;
+double dailyEnergyS3 = 0.0;
+double dailyEnergyS4 = 0.0;
+
 // Voltage Analytics
 float hourlyVoltageSum = 0.0;
 int hourlyVoltageCount = 0;
 float hourlyVoltageMin = 999.0;
 float hourlyVoltageMax = 0.0;
 
+float dailyVoltageSum = 0.0;
+int dailyVoltageCount = 0;
+float dailyVoltageMin = 999.0;
+float dailyVoltageMax = 0.0;
+
 int currentHour = -1;
+int currentDay = -1;
 
 // Live Telemetry
 float currentVoltage = 0.0;
@@ -190,9 +202,13 @@ void runAutomation(float temp, bool motionDetected, bool ldrLight) {
 void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, float voltage) {
   DateTime now = rtcFound ? (useDS1307 ? rtc1307.now() : rtc3231.now()) : DateTime((uint32_t)0);
   int thisHour = now.hour();
+  int thisDay = now.day();
 
   if (currentHour == -1) {
     currentHour = thisHour;
+  }
+  if (currentDay == -1) {
+    currentDay = thisDay;
   }
 
   if (thisHour != currentHour) {
@@ -208,21 +224,51 @@ void calculateEnergy(float totalPowerW, float p1, float p2, float p3, float p4, 
     currentHour = thisHour;
   }
 
+  if (thisDay != currentDay) {
+    dailyEnergyTotal = 0.0;
+    dailyEnergyS1 = 0.0;
+    dailyEnergyS2 = 0.0;
+    dailyEnergyS3 = 0.0;
+    dailyEnergyS4 = 0.0;
+    dailyVoltageSum = 0.0;
+    dailyVoltageCount = 0;
+    dailyVoltageMin = 999.0;
+    dailyVoltageMax = 0.0;
+    currentDay = thisDay;
+  }
+
   unsigned long currentTime = millis();
   float elapsedHours = (currentTime - lastEnergyCalc) / 3600000.0; 
   lastEnergyCalc = currentTime;
 
-  hourlyEnergyTotal += (totalPowerW * elapsedHours);
-  hourlyEnergyS1 += (p1 * elapsedHours);
-  hourlyEnergyS2 += (p2 * elapsedHours);
-  hourlyEnergyS3 += (p3 * elapsedHours);
-  hourlyEnergyS4 += (p4 * elapsedHours);
+  float eTotal = totalPowerW * elapsedHours;
+  float e1 = p1 * elapsedHours;
+  float e2 = p2 * elapsedHours;
+  float e3 = p3 * elapsedHours;
+  float e4 = p4 * elapsedHours;
+
+  hourlyEnergyTotal += eTotal;
+  hourlyEnergyS1 += e1;
+  hourlyEnergyS2 += e2;
+  hourlyEnergyS3 += e3;
+  hourlyEnergyS4 += e4;
+
+  dailyEnergyTotal += eTotal;
+  dailyEnergyS1 += e1;
+  dailyEnergyS2 += e2;
+  dailyEnergyS3 += e3;
+  dailyEnergyS4 += e4;
 
   if (voltage > 10.0) { // filter bad zero readings
     hourlyVoltageSum += voltage;
     hourlyVoltageCount++;
     if (voltage < hourlyVoltageMin) hourlyVoltageMin = voltage;
     if (voltage > hourlyVoltageMax) hourlyVoltageMax = voltage;
+
+    dailyVoltageSum += voltage;
+    dailyVoltageCount++;
+    if (voltage < dailyVoltageMin) dailyVoltageMin = voltage;
+    if (voltage > dailyVoltageMax) dailyVoltageMax = voltage;
   }
 }
 
@@ -251,11 +297,11 @@ void logEnergyToFirebase() {
     return;
   }
 
-  // Append auth token so Firebase accepts the write
-  String url = String(firebase_url) + "/energy_logs/" + String(year) + "/" + String(month) + "/" + String(day) + "/" + String(hour) + ".json?auth=" + FIREBASE_DATABASE_SECRET;
+  // --- Log Hourly Data ---
+  String urlHourly = String(firebase_url) + "/energy_logs/" + String(year) + "/" + String(month) + "/" + String(day) + "/" + String(hour) + ".json?auth=" + FIREBASE_DATABASE_SECRET;
   
   HTTPClient http;
-  http.begin(url);
+  http.begin(urlHourly);
   http.addHeader("Content-Type", "application/json");
   
   float vAvg = hourlyVoltageCount > 0 ? (hourlyVoltageSum / hourlyVoltageCount) : 0.0;
@@ -273,12 +319,41 @@ void logEnergyToFirebase() {
   payload += "}";
   
   int httpResponseCode = http.PATCH(payload);
-  
   if (httpResponseCode > 0) {
-    Serial.print("Firebase Logged: ");
+    Serial.print("Firebase Hourly Logged: ");
     Serial.println(payload);
   } else {
-    Serial.print("Firebase Error: ");
+    Serial.print("Firebase Hourly Error: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+
+  // --- Log Daily Summary ---
+  String urlDaily = String(firebase_url) + "/energy_logs/" + String(year) + "/" + String(month) + "/" + String(day) + "/daily_summary.json?auth=" + FIREBASE_DATABASE_SECRET;
+  
+  http.begin(urlDaily);
+  http.addHeader("Content-Type", "application/json");
+  
+  float dAvg = dailyVoltageCount > 0 ? (dailyVoltageSum / dailyVoltageCount) : 0.0;
+  float dMin = dailyVoltageMin == 999.0 ? 0.0 : dailyVoltageMin;
+  
+  String dailyPayload = "{";
+  dailyPayload += "\"total_wh\":" + String(dailyEnergyTotal, 4) + ",";
+  dailyPayload += "\"s1_wh\":" + String(dailyEnergyS1, 4) + ",";
+  dailyPayload += "\"s2_wh\":" + String(dailyEnergyS2, 4) + ",";
+  dailyPayload += "\"s3_wh\":" + String(dailyEnergyS3, 4) + ",";
+  dailyPayload += "\"s4_wh\":" + String(dailyEnergyS4, 4) + ",";
+  dailyPayload += "\"v_avg\":" + String(dAvg, 2) + ",";
+  dailyPayload += "\"v_min\":" + String(dMin, 2) + ",";
+  dailyPayload += "\"v_max\":" + String(dailyVoltageMax, 2);
+  dailyPayload += "}";
+  
+  httpResponseCode = http.PATCH(dailyPayload);
+  if (httpResponseCode > 0) {
+    Serial.print("Firebase Daily Logged: ");
+    Serial.println(dailyPayload);
+  } else {
+    Serial.print("Firebase Daily Error: ");
     Serial.println(httpResponseCode);
   }
   http.end();
@@ -372,6 +447,7 @@ void sendUpdate() {
   
   env["voltage"] = mainVoltage;
   env["mainCurrent"] = mainCurrent;
+  env["dailyEnergy"] = dailyEnergyTotal;
   
   // Provide a fault flag to UI so it knows why everything is OFF
   env["voltageFault"] = voltageFault;

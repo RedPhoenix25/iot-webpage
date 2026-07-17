@@ -14,6 +14,11 @@ const HistoryLookup = () => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Daily Lookup State
+  const [dailyDate, setDailyDate] = useState('');
+  const [dailyResult, setDailyResult] = useState(null);
+  const [loadingDaily, setLoadingDaily] = useState(false);
+
   // Statement State
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -46,6 +51,28 @@ const HistoryLookup = () => {
       setResult(null);
     }
     setLoading(false);
+  };
+
+  const handleDailySearch = async () => {
+    if (!dailyDate) return;
+    setLoadingDaily(true);
+    
+    try {
+      const [year, month, day] = dailyDate.split('-');
+      const dbRef = ref(db, `energy_logs/${year}/${parseInt(month, 10)}/${parseInt(day, 10)}/daily_summary`);
+      
+      const snapshot = await get(dbRef);
+      if (snapshot.exists()) {
+        setDailyResult(snapshot.val());
+      } else {
+        setDailyResult({ total_wh: 0, s1_wh: 0, s2_wh: 0, s3_wh: 0, s4_wh: 0, v_avg: 0, v_min: 0, v_max: 0 });
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Daily search failed: " + err.message, 'error');
+      setDailyResult(null);
+    }
+    setLoadingDaily(false);
   };
 
   const handleDownloadCSV = async () => {
@@ -148,11 +175,15 @@ const HistoryLookup = () => {
             
             <h2 style={{ marginBottom: '1.5rem' }}>Historical Reports</h2>
             
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px', flexWrap: 'wrap' }}>
               <button 
                 onClick={() => setActiveTab('lookup')}
                 style={{ background: 'none', border: 'none', color: activeTab === 'lookup' ? 'var(--accent-color)' : 'var(--text-muted)', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}
               >Specific Hour Lookup</button>
+              <button 
+                onClick={() => setActiveTab('dailyLookup')}
+                style={{ background: 'none', border: 'none', color: activeTab === 'dailyLookup' ? 'var(--accent-color)' : 'var(--text-muted)', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}
+              >Specific Day Lookup</button>
               <button 
                 onClick={() => setActiveTab('statement')}
                 style={{ background: 'none', border: 'none', color: activeTab === 'statement' ? 'var(--accent-color)' : 'var(--text-muted)', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}
@@ -206,6 +237,57 @@ const HistoryLookup = () => {
                       <div>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Peak Voltage</p>
                         <h3 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--success-color)' }}>{result.v_max || 0} V</h3>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'dailyLookup' && (
+              <div>
+                <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>Check precise power draw and voltage stats for an entire day.</p>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '2rem' }}>
+                  <input type="date" value={dailyDate} onChange={(e) => setDailyDate(e.target.value)} className="history-input" />
+                  <button onClick={handleDailySearch} className="login-button" style={{ width: 'auto', padding: '12px 24px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Search size={18} /> {loadingDaily ? 'Searching...' : 'Search'}
+                  </button>
+                </div>
+
+                {dailyResult && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    <div style={{ background: 'rgba(0, 229, 255, 0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(0, 229, 255, 0.2)' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}><Bolt size={14} style={{display:'inline'}}/> Total System</p>
+                      <h3 style={{ fontSize: '2rem', margin: 0, color: 'var(--accent-color)' }}>{dailyResult.total_wh || dailyResult.wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 1</p>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s1_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 2</p>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s2_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Socket 3</p>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s3_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Light Bulb</p>
+                      <h3 style={{ fontSize: '1.5rem', margin: 0 }}>{dailyResult.s4_wh || 0} <span style={{fontSize:'1rem'}}>Wh</span></h3>
+                    </div>
+                    <div style={{ background: 'rgba(16, 185, 129, 0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)', gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between' }}>
+                      <div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}><Activity size={14} style={{display:'inline'}}/> Avg Voltage</p>
+                        <h3 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--success-color)' }}>{dailyResult.v_avg || 0} V</h3>
+                      </div>
+                      <div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Min Voltage</p>
+                        <h3 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--success-color)' }}>{dailyResult.v_min || 0} V</h3>
+                      </div>
+                      <div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', marginBottom: '8px' }}>Peak Voltage</p>
+                        <h3 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--success-color)' }}>{dailyResult.v_max || 0} V</h3>
                       </div>
                     </div>
                   </div>

@@ -7,7 +7,6 @@ const RATE_DB_PATH = 'settings/electricity_rate';
 const DEFAULT_RATE = 225;
 
 const EnergyStats = () => {
-  const [todayWh, setTodayWh] = useState(null);
   const [monthKwh, setMonthKwh] = useState(null);
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [showRateEditor, setShowRateEditor] = useState(false);
@@ -21,20 +20,7 @@ const EnergyStats = () => {
     const day = now.getDate();
 
     try {
-      // --- Today's Wh ---
-      const todayRef = ref(db, `energy_logs/${year}/${month}/${day}`);
-      const todaySnap = await get(todayRef);
-      if (todaySnap.exists()) {
-        const hours = todaySnap.val();
-        let total = 0;
-        for (const h in hours) {
-          const entry = hours[h];
-          total += entry.total_wh || entry.wh || 0;
-        }
-        setTodayWh(total);
-      } else {
-        setTodayWh(0);
-      }
+
 
       // --- This Month's kWh ---
       const monthRef = ref(db, `energy_logs/${year}/${month}`);
@@ -99,24 +85,7 @@ const EnergyStats = () => {
 
   return (
     <div className="energy-stats-bar">
-      {/* Today's Usage */}
-      <div className="energy-stat-chip">
-        <div className="energy-stat-icon" style={{ background: 'rgba(0, 229, 255, 0.15)', color: 'var(--accent-color)' }}>
-          <Zap size={18} />
-        </div>
-        <div>
-          <p className="energy-stat-label">Today's Usage</p>
-          <p className="energy-stat-value">
-            {todayWh === null
-              ? <span className="loading-pulse">—</span>
-              : <>{todayWh.toFixed(1)} <span className="energy-stat-unit">Wh</span></>
-            }
-          </p>
-        </div>
-      </div>
 
-      {/* Divider */}
-      <div className="energy-stat-divider" />
 
       {/* This Month */}
       <div className="energy-stat-chip">

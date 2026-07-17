@@ -1,7 +1,7 @@
 import React from 'react';
 import { Activity, Zap } from 'lucide-react';
 
-const AnalogGauge = ({ power, voltage, current, max = 5000 }) => {
+const AnalogGauge = ({ power, voltage, current, energy, max = 5000 }) => {
   const radius = 80;
   const circumference = Math.PI * radius;
   // Ensure percentage doesn't exceed 1
@@ -53,6 +53,12 @@ const AnalogGauge = ({ power, voltage, current, max = 5000 }) => {
       </div>
 
       <div className="power-stats-container">
+        <div className="power-stat-box" style={{ borderColor: 'rgba(0, 229, 255, 0.3)' }}>
+          <div className="stat-label" style={{ color: 'var(--accent-color)' }}><Zap size={16} /> Live Energy</div>
+          <div className="stat-value" style={{ color: 'var(--accent-color)' }}>
+            {energy !== null ? energy.toFixed(1) : '--'} <span className="stat-unit" style={{ color: 'var(--accent-color)', opacity: 0.8 }}>Wh</span>
+          </div>
+        </div>
         <div className="power-stat-box">
           <div className="stat-label"><Activity size={16} /> Main Voltage</div>
           <div className="stat-value" style={{ color: 'var(--success-color)' }}>
