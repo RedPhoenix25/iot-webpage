@@ -117,3 +117,5 @@
 - **UI Updates:** Removed individual socket voltage, power, and current readings from the React dashboard device cards, keeping only the label and the toggle switch to streamline the UI. The top Live Wattage continues to accurately sum these underlying values.
 
 - **Bug Fix:** Fixed Total Current showing 0.00A when Live Wattage calculates from summed socket powers. Modified Load Shedding trigger to perfectly match the dashboard's visual .toFixed(3) rounding and added an instant MQTT publish to reflect the shutoff immediately.
+
+- **Safety Configuration:** Lowered the voltage safety cutoff threshold to 100V. The system will now cut power if voltage drops below 100V or rises above 240V.

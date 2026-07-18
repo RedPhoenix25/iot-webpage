@@ -389,7 +389,7 @@ void sendUpdate() {
   float totalPower = mainCurrent * mainVoltage;
   
   // Safety check
-  if (mainVoltage < 180.0 || mainVoltage > 240.0) {
+  if (mainVoltage < 100.0 || mainVoltage > 240.0) {
     if (!voltageFault) {
       voltageFault = true;
       Serial.println("VOLTAGE FAULT! Cutting power to all sockets.");
