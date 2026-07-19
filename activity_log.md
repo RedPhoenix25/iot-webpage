@@ -119,3 +119,7 @@
 - **Bug Fix:** Fixed Total Current showing 0.00A when Live Wattage calculates from summed socket powers. Modified Load Shedding trigger to perfectly match the dashboard's visual .toFixed(3) rounding and added an instant MQTT publish to reflect the shutoff immediately.
 
 - **Safety Configuration:** Lowered the voltage safety cutoff threshold to 100V. The system will now cut power if voltage drops below 100V or rises above 240V.
+
+## Documentation
+- **Report Generation**: Compiled the "Results and Discussion" section of the report in `results_and_discussion.md` based on user screenshots. The document analyzes the React-based glassmorphism Command Center, system tariff and daily energy limit load-shedding configurations, Recharts graph visualizations, Historical Reports CSV exporter, and ESP32 DSP/sensor calibration methodologies (True AC RMS, Min-Consistency Gate, and Quadratic Noise Subtraction).
+
