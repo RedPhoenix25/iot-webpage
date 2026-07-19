@@ -122,4 +122,6 @@
 
 ## Documentation
 - **Report Generation**: Compiled the "Results and Discussion" section of the report in `results_and_discussion.md` based on user screenshots. The document analyzes the React-based glassmorphism Command Center, system tariff and daily energy limit load-shedding configurations, Recharts graph visualizations, Historical Reports CSV exporter, and ESP32 DSP/sensor calibration methodologies (True AC RMS, Min-Consistency Gate, and Quadratic Noise Subtraction).
+- **Interactive Artifact**: Created a rich visual version of the Results and Discussion section at `results_and_discussion_report.md` inside the workspace's conversation artifact folder. This integrates the user's uploaded testing screenshots directly alongside the text sections (including carousels and detailed analysis blocks) for real-time previewing.
+
 
