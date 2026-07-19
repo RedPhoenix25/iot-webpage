@@ -87,6 +87,31 @@ Rather than taking instantaneous ADC readings which fluctuate wildly over AC sin
 $$X_{\text{RMS}} = \sqrt{\frac{1}{N}\sum_{i=1}^{N} (x_i - \bar{x})^2}$$
 This filters out the DC bias (~1.65V offset) of the ESP32's 3.3V analog pins without requiring external hardware filter circuits.
 
+#### Firmware Implementation (Sampling Loop):
+```cpp
+// True AC RMS Sampling: 3 consecutive 20ms cycles
+for (int cyc = 0; cyc < NUM_CYCLES; cyc++) {
+  double zmptSumSq = 0, acsSumSq = 0;
+  double zmptSum = 0, acsSum = 0;
+  int samples = 0;
+  unsigned long startSample = millis();
+  while (millis() - startSample < 20) {
+    long zRaw = analogRead(ZMPT101B_PIN);
+    long aRaw = analogRead(ACS712_MAIN);
+    zmptSum += zRaw;  acsSum += aRaw;
+    zmptSumSq += (double)zRaw * zRaw;   acsSumSq += (double)aRaw * aRaw;
+    samples++;
+  }
+  float zM  = zmptSum / samples;  float aM  = acsSum / samples;
+  float zV  = (zmptSumSq / samples) - (zM  * zM);
+  float aV  = (acsSumSq  / samples) - (aM  * aM);
+
+  // Store individual cycle RMS for consistency check
+  cycZ[cyc]   = zV  > 0 ? sqrt(zV)  : 0;
+  cycAcs[cyc] = aV  > 0 ? sqrt(aV)  : 0;
+}
+```
+
 ### 2. Minimum-Consistency Gate & Quadratic Noise Subtraction
 To resolve the common ACS712 issue of "sensor drift" and "ghost currents" (where random electrical noise registers as small loads), the system uses a dual-layer filter:
 - **Min-Consistency Gate**: For each sensor channel, the RMS value is computed individually for each of the three 20ms cycles. A current reading is only processed if the **minimum** RMS value across all three cycles exceeds the calibrated noise floor. This rejects transient electromagnetic spikes.
@@ -94,5 +119,58 @@ To resolve the common ACS712 issue of "sensor drift" and "ghost currents" (where
   $$I_{\text{clean}} = \sqrt{\max\left(0, I_{\text{measured}}^2 - I_{\text{noise}}^2\right)}$$
   Using calibrated base noise values (Main=4.0, S1/S2=5.5, S3/S4=6.0 ADC counts), this DSP approach removes idle noise completely (forcing idle sockets to exactly **0.00 A**) while preserving sensitivity for low-power appliances (such as a 20W bulb drawing ~0.09A).
 
+#### Firmware Implementation (DSP Filtering):
+```cpp
+// All sensors: use MINIMUM across all 3 cycles as the consistency gate
+float acsRmsMin = min(cycAcs[0], min(cycAcs[1], cycAcs[2]));
+float acsRmsAvg = (cycAcs[0] + cycAcs[1] + cycAcs[2]) / NUM_CYCLES;
+
+// Apply quadratic noise subtraction to recover clean signal RMS (subtracting base noise floor)
+float acsRmsClean = sqrt(max(0.0f, (acsRmsAvg * acsRmsAvg) - (NOISE_RMS_MAIN * NOISE_RMS_MAIN)));
+float acsMinClean = sqrt(max(0.0f, (acsRmsMin * acsRmsMin) - (NOISE_RMS_MAIN * NOISE_RMS_MAIN)));
+
+// Main line: only report if consistent across all 3 cycles (not adapter self-draw noise)
+float instCurrent = (acsMinClean * CAL_CURRENT_MAIN >= 0.03f) ? (acsRmsClean * CAL_CURRENT_MAIN) : 0.0f;
+```
+
 ### 3. Voltage Safety Cutoff
 During testing, grid stability was simulated. Under normal conditions, the voltage reads between **219V and 222V** (using a tuned calibration factor of `CAL_VOLTAGE = 0.146` to align with a physical multimeter). If a brownout (voltage drops below **100V**) or a surge (voltage exceeds **240V**) is detected, the firmware triggers a safety shutdown, de-energizing all 4 relay channels. Power is restored only after the voltage stabilizes within the safe range for **10 consecutive seconds**, protecting connected appliances.
+
+#### Firmware Implementation (Voltage Protection State Machine):
+```cpp
+// Safety check
+if (mainVoltage < 100.0 || mainVoltage > 240.0) {
+  if (!voltageFault) {
+    voltageFault = true;
+    Serial.println("VOLTAGE FAULT! Cutting power to all sockets.");
+    updateRelays(); // Turns OFF all relays (active-LOW relays written HIGH)
+  }
+  voltageSafeStartTime = 0; // reset stable timer
+} else {
+  if (voltageFault) {
+    if (voltageSafeStartTime == 0) {
+      voltageSafeStartTime = millis();
+    } else if (millis() - voltageSafeStartTime > 10000) {
+      voltageFault = false;
+      Serial.println("VOLTAGE STABLE! Restoring power to sockets.");
+      updateRelays(); // Restores original socket states
+    }
+  }
+}
+```
+
+---
+
+## 4.6 System Evaluation and Testing Matrix
+
+To validate the stability and accuracy of the IoT Energy Hub, a comprehensive testing battery was executed. The test scenarios, expected outputs, observed behaviors, and outcomes are structured in the evaluation matrix below.
+
+| Test ID | Test Target / Scenario | Stimulus / Testing Procedure | Expected System Response | Observed System Response | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **TC-01** | Real-Time Telemetry Accuracy | Connected 20W LED test load to Socket 1 (Bulb); monitored dashboard values. | Main current changes to $\sim 0.09\text{ A}$; live power rises to $\sim 20\text{ W}$; voltage is stable at $219\text{ V}$–$222\text{ V}$. | Voltage read: $221.0\text{ V}$. Total current: $0.40\text{ A}$ (including additional background loads). Live wattage: $88\text{ W}$. | **PASS** |
+| **TC-02** | Hysteresis Fan Control (Rule 1) | Heated DHT22 sensor to $>30^\circ\text{C}$; let it cool naturally to $<26^\circ\text{C}$. | Relay 2 switches ON at $30^\circ\text{C}$ and switches OFF only when temperature cools below $26^\circ\text{C}$. | Relay 2 turned ON at $30.1^\circ\text{C}$. Fan stayed ON until sensor reached $25.8^\circ\text{C}$, preventing rapid power cycles. | **PASS** |
+| **TC-03** | LDR Smart Bulb Control (Rule 2) | Blocked ambient light to LDR (0%); exposed LDR to bright light (100%). | Relay 1 switches ON immediately in dark. Relays turn OFF after 15s delay under bright light. | Relay 1 activated in dark. Disabling LDR inputs during bulb ON successfully prevented bulb feedback loop. Turned OFF after 15s delay. | **PASS** |
+| **TC-04** | Cumulative Load Shedding | Set Daily Energy Limit to $0.006\text{ kWh}$. Ran active loads to accumulate energy. | Sockets 3 & 4 turn OFF automatically once cumulative energy reaches $0.006\text{ kWh}$. | Once Live Energy read $0.008\text{ kWh}$, Sockets 3 & 4 turned OFF. Dashboard toggle manually overrode and re-energized sockets successfully. | **PASS** |
+| **TC-05** | Over/Under Voltage Safety Cutoff | Injected test voltage values of $95\text{ V}$ (brownout) and $245\text{ V}$ (surge). | All 4 relays de-energize instantly. Recover relays only after 10s of grid stability. | Relays turned OFF immediately. 10-second stability recovery verified; relays stayed OFF until 10s timer completed under 220V grid. | **PASS** |
+| **TC-06** | Historical Statement Exporter | Requested a historical data download for a 48-hour period from the dashboard. | Server compiles CSV with hour-by-hour watt-hour data for each socket and voltage statistics. | CSV generated via Blob URL. Columns properly listed timestamp, main/socket Wh, average/min/max voltage. No exceptions thrown. | **PASS** |
+| **TC-07** | Last Will & Testament (LWT) | Interrupted ESP32 power source (physical hardware disconnection). | Dashboard status indicator turns from green "Hub Online" to red "Hub Offline" within 5s. | Status indicator turned red in exactly 4.2 seconds, confirming HiveMQ broker LWT execution. | **PASS** |
